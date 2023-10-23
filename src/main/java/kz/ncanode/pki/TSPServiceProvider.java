@@ -76,6 +76,10 @@ public class TSPServiceProvider implements ServiceProvider {
                 return response.getTimeStampToken();
             } catch (IOException e) {
                 lastException = e;
+                this.err.write(String.format(
+                        "Не удалось создать TSP метку. Попытка: %s. Ошибка:  %s",
+                        retries,
+                        lastException.getMessage()));
                 retries++;
             }
         }
