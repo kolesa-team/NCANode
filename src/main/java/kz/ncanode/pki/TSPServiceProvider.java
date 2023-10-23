@@ -65,7 +65,7 @@ public class TSPServiceProvider implements ServiceProvider {
         // выполняем запрос к http://tsp.pki.gov.kz с ретраями,
         // потому что иногда он отвечает медленно или с ошибками.
         int retries = 0;
-        int maxRetries = 2;
+        int maxRetries = 10;
         IOException lastException = null;
 
         while (retries < maxRetries) {
@@ -162,10 +162,10 @@ public class TSPServiceProvider implements ServiceProvider {
     protected InputStream requestTsp(String url, byte[] request) throws IOException {
         URL tspUrl = new URL(url);
         HttpURLConnection con = (HttpURLConnection) tspUrl.openConnection();
-        // connection timeout: 1 second
-        con.setConnectTimeout(1000);
-        // read timeout: 3 seconds
-        con.setReadTimeout(3000);
+        // connection timeout: 5 second
+        con.setConnectTimeout(5000);
+        // read timeout: 15 seconds
+        con.setReadTimeout(15000);
         con.setRequestMethod("POST");
         con.setDoOutput(true);
         con.setRequestProperty("Content-Type", "application/timestamp-query");
