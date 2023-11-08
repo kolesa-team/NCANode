@@ -169,6 +169,21 @@ public class CmsController extends kz.ncanode.api.core.ApiController {
             Collection certCollection = clientCerts.getCertificates(signerConstraints);
             Iterator certIt = certCollection.iterator();
 
+            // Верификация TSP-отметок и соответствующих в момент подписания сертификатов
+            Vector<Attribute> tspAttrs = getApiServiceProvider().tsp.getSignerTspAttributes(signer);
+            Vector<TimeStampTokenInfo> tspiList = new Vector<>();
+
+            for (Attribute attr : tspAttrs) {
+                if (attr.getAttrValues().size() != 1) {
+                    throw new Exception("Too many TSP tokens");
+                }
+
+                CMSSignedData tspCms = new CMSSignedData(attr.getAttrValues().getObjectAt(0).getDERObject().getEncoded());
+                TimeStampTokenInfo tspi = getApiServiceProvider().tsp.verifyTSP(tspCms);
+
+                tspiList.add(tspi);
+            }
+
             boolean certCheck = false;
             List<String> certSerialNumbers = new ArrayList<>();
 
@@ -178,7 +193,13 @@ public class CmsController extends kz.ncanode.api.core.ApiController {
 
                 try {
                     cert.checkValidity();
-                } catch (CertificateExpiredException|CertificateNotYetValidException e) {
+                } catch (CertificateExpiredException e) {
+                    try {
+                       cert.checkValidity(tspiList.get(0).getGenTime());
+                    } catch (CertificateExpiredException|CertificateNotYetValidException gte) {
+                        throw new ApiErrorException(gte.getMessage(), HttpURLConnection.HTTP_BAD_REQUEST, ApiStatus.STATUS_CERTIFICATE_INVALID);
+                    }
+                } catch (CertificateNotYetValidException e) {
                     throw new ApiErrorException(e.getMessage(), HttpURLConnection.HTTP_BAD_REQUEST, ApiStatus.STATUS_CERTIFICATE_INVALID);
                 }
 
@@ -195,17 +216,7 @@ public class CmsController extends kz.ncanode.api.core.ApiController {
                 );
             }
 
-            // Tsp verification
-            Vector<Attribute> tspAttrs = getApiServiceProvider().tsp.getSignerTspAttributes(signer);
-
-            for (Attribute attr : tspAttrs) {
-                if (attr.getAttrValues().size() != 1) {
-                    throw new Exception("Too many TSP tokens");
-                }
-
-                CMSSignedData tspCms = new CMSSignedData(attr.getAttrValues().getObjectAt(0).getDERObject().getEncoded());
-                TimeStampTokenInfo tspi = getApiServiceProvider().tsp.verifyTSP(tspCms);
-
+            for (TimeStampTokenInfo tspi : tspiList) {
                 JSONObject tspout = new JSONObject();
 
                 tspout.put("serialNumber", new String(Hex.encode(tspi.getSerialNumber().toByteArray())));
