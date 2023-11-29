@@ -37,7 +37,7 @@ public class CmsSignModel extends ApiModel {
     protected void afterAccept() {
         try {
             this.signedData = new CMSSignedData(data.get());
-        } catch (CMSException ignored) {
+        } catch (Exception ignored) {
             // документ не подписан, это нормально
         }
     }
