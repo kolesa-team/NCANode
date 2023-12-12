@@ -228,16 +228,23 @@ public class CmsService {
                 // TSP Checking
                 if (signer.getUnsignedAttributes() != null) {
                     var attrs = signer.getUnsignedAttributes().toHashtable();
-
                     if (attrs.containsKey(PKCSObjectIdentifiers.id_aa_signatureTimeStampToken)) {
-                        Attribute attr = (Attribute) attrs.get(PKCSObjectIdentifiers.id_aa_signatureTimeStampToken);
+                        Object maybeVectorOrAttr = attrs.get(PKCSObjectIdentifiers.id_aa_signatureTimeStampToken);
 
+                        Optional<Attribute> attr = maybeVectorOrAttr instanceof Vector
+                                ? Optional.of(((List<Object>) maybeVectorOrAttr)
+                                    .stream()
+                                    .filter(Objects::nonNull)
+                                    .map(Attribute.class::cast)
+                                    .findFirst()
+                                    .orElseThrow(() -> new Exception("No attributes found")))
+                                : Optional.of((Attribute) maybeVectorOrAttr);
 
-                        if (attr.getAttrValues().size() != 1) {
+                        if (attr.get().getAttrValues().size() != 1) {
                             throw new Exception("Too many TSP tokens");
                         }
 
-                        CMSSignedData tspCms = new CMSSignedData(attr.getAttrValues().getObjectAt(0).getDERObject().getEncoded());
+                        CMSSignedData tspCms = new CMSSignedData(attr.get().getAttrValues().getObjectAt(0).getDERObject().getEncoded());
                         TimeStampTokenInfo tspi = tspService.info(tspCms).orElseThrow();
 
                         try {
