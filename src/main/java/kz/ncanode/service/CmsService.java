@@ -160,10 +160,19 @@ public class CmsService {
                 List<SignerInformation> signers = new ArrayList<>();
 
                 int i = 0;
-
                 for (Object signer : signerStore.getSigners()) {
                     X509Certificate cert = certificates.get(i++);
-                    signers.add(tspService.addTspToSigner((SignerInformation) signer, cert, useTsaPolicy));
+
+                    //Нельзя перезатирать TSP у предыдущих подписантов
+                    boolean isCurrentSignerSameAsPrevious = isSignerSameAsPrevious((SignerInformation) signer, cms);
+                    if(isCurrentSignerSameAsPrevious) {
+                        //Старых подписантов оставляем без изменений
+                        signers.add((SignerInformation)signer);
+                    }
+                    else {
+                        //Новым подписантам устанавливаем TSP
+                        signers.add(tspService.addTspToSigner((SignerInformation) signer, cert, useTsaPolicy));
+                    }
                 }
 
                 signed = CMSSignedData.replaceSigners(signed, new SignerInformationStore(signers));
@@ -175,6 +184,17 @@ public class CmsService {
         } catch (Exception e) {
             throw new ServerException(e.getMessage(), e);
         }
+    }
+
+    private static boolean isSignerSameAsPrevious(SignerInformation signer, CMSSignedData cms) {
+        boolean isCurrentSignerSameAsPrevious = false;
+        for(Object obj : cms.getSignerInfos().getSigners()) {
+            SignerInformation prevSignerInfo = (SignerInformation)obj;
+            if (prevSignerInfo.getSID().equals(signer.getSID())) {
+                isCurrentSignerSameAsPrevious = true;
+            }
+        }
+        return isCurrentSignerSameAsPrevious;
     }
 
     /**
@@ -229,16 +249,14 @@ public class CmsService {
                 if (signer.getUnsignedAttributes() != null) {
                     var attrs = signer.getUnsignedAttributes().toHashtable();
                     if (attrs.containsKey(PKCSObjectIdentifiers.id_aa_signatureTimeStampToken)) {
-                        Object maybeVectorOrAttr = attrs.get(PKCSObjectIdentifiers.id_aa_signatureTimeStampToken);
-
-                        Optional<Attribute> attr = maybeVectorOrAttr instanceof Vector
-                                ? Optional.of(((List<Object>) maybeVectorOrAttr)
-                                    .stream()
-                                    .filter(Objects::nonNull)
-                                    .map(Attribute.class::cast)
-                                    .findFirst()
-                                    .orElseThrow(() -> new Exception("No attributes found")))
-                                : Optional.of((Attribute) maybeVectorOrAttr);
+                        Attribute attr = null;
+                        Object obj = attrs.get(PKCSObjectIdentifiers.id_aa_signatureTimeStampToken);
+                        if(obj instanceof Vector) {
+                            attr = (Attribute)( ((Vector)obj).get(0) );
+                        }
+                        else {
+                            attr = (Attribute)obj;
+                        }
 
                         if (attr.get().getAttrValues().size() != 1) {
                             throw new Exception("Too many TSP tokens");
