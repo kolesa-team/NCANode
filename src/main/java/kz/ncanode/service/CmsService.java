@@ -258,11 +258,11 @@ public class CmsService {
                             attr = (Attribute)obj;
                         }
 
-                        if (attr.get().getAttrValues().size() != 1) {
+                        if (attr.getAttrValues().size() != 1) {
                             throw new Exception("Too many TSP tokens");
                         }
 
-                        CMSSignedData tspCms = new CMSSignedData(attr.get().getAttrValues().getObjectAt(0).getDERObject().getEncoded());
+                        CMSSignedData tspCms = new CMSSignedData(attr.getAttrValues().getObjectAt(0).getDERObject().getEncoded());
                         TimeStampTokenInfo tspi = tspService.info(tspCms).orElseThrow();
 
                         try {
