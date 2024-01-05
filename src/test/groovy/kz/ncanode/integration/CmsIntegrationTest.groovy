@@ -75,6 +75,48 @@ class CmsIntegrationTest extends IntegrationSpecification {
         response.cms != null
     }
 
+    def "test sign add multiple signers with TSP"() {
+        given:
+        def request1 = new CmsCreateRequest()
+        request1.cms = SIGNED_CMS
+        request1.withTsp = true
+        request1.signers = [
+            SignerRequest.builder()
+                .key(KEY_INDIVIDUAL_VALID_2015)
+                .password(KEY_INDIVIDUAL_VALID_2015_PASSWORD)
+                .build(),
+        ]
+        def requestJson1 = new ObjectMapper().writeValueAsString(request1)
+        def response1 = doPostQuery(URI_SIGN_ADD, requestJson1, 200, CmsResponse)
+
+        when:
+        def request2 = new CmsCreateRequest()
+        request2.cms = response1.cms
+        request2.withTsp = true
+        request2.signers = [
+            SignerRequest.builder()
+                .key(KEY_INDIVIDUAL_VALID_2015)
+                .password(KEY_INDIVIDUAL_VALID_2015_PASSWORD)
+                .build(),
+        ]
+        def requestJson2 = new ObjectMapper().writeValueAsString(request2)
+        def response2 = doPostQuery(URI_SIGN_ADD, requestJson2, 200, CmsResponse)
+
+        def verifyRequest = CmsVerifyRequest.builder().cms(response2.getCms()).build()
+        def verifyRequestJson = new ObjectMapper().writeValueAsString(verifyRequest)
+        def verifyResponse = doPostQuery(URI_VERIFY, verifyRequestJson, 200, CmsVerificationResponse)
+
+        then:
+        response2 != null
+        response2.cms != null
+
+        verifyResponse != null
+        verifyResponse.getSigners().size() == 3
+        verifyResponse.getSigners()[0].getTsp() == null
+        verifyResponse.getSigners()[1].getTsp() != null
+        verifyResponse.getSigners()[2].getTsp() != null
+    }
+
     def "test verify"() {
         given:
         def request = CmsVerifyRequest.builder()

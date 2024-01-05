@@ -1,12 +1,14 @@
 package kz.ncanode.dto.tsp;
 
-import lombok.Builder;
-import lombok.Data;
+import lombok.*;
 
 import java.util.Date;
 
 @Data
 @Builder
+@AllArgsConstructor
+@Getter
+@NoArgsConstructor
 public class TspInfo {
     private String serialNumber;
     private Date genTime;
