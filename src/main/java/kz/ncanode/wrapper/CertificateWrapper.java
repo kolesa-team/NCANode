@@ -193,17 +193,21 @@ public class CertificateWrapper {
         return x509Certificate.getPublicKey();
     }
 
-    private Set<CertificateKeyUser> getKeyUser() {
+    public List<String> getExtendedKeyUsage() {
         try {
-            return getX509Certificate().getExtendedKeyUsage().stream()
-                .map(CertificateKeyUser::fromOID)
-                .filter(Optional::isPresent)
-                .map(Optional::get)
-                .collect(Collectors.toSet());
+            return getX509Certificate().getExtendedKeyUsage();
         } catch (CertificateParsingException e) {
             log.error("Certificate key user extracting error", e);
-            return Collections.emptySet();
+            return Collections.emptyList();
         }
+    }
+
+    private Set<CertificateKeyUser> getKeyUser() {
+        return getExtendedKeyUsage().stream()
+            .map(CertificateKeyUser::fromOID)
+            .filter(Optional::isPresent)
+            .map(Optional::get)
+            .collect(Collectors.toSet());
     }
 
     public static Optional<CertificateWrapper> fromBase64(final String encodedCert) {
@@ -259,7 +263,7 @@ public class CertificateWrapper {
                     subjectBuilder.locality((String)rdn.getValue());
                 } else if (rdn.getType().equalsIgnoreCase("S")) {
                     subjectBuilder.state((String)rdn.getValue());
-                } else if (rdn.getType().equalsIgnoreCase("E")) {
+                } else if ((rdn.getType().equalsIgnoreCase("E")) || (rdn.getType().equalsIgnoreCase("EMAILADDRESS"))) {
                     subjectBuilder.email((String)rdn.getValue());
                 } else if (rdn.getType().equalsIgnoreCase("O")) {
                     subjectBuilder.organization((String)rdn.getValue());
@@ -276,7 +280,7 @@ public class CertificateWrapper {
 
             return Optional.of(subjectBuilder.build());
         } catch (InvalidNameException e) {
-            log.warn("Distinguished name parseing error", e);
+            log.warn("Distinguished name parsing error", e);
             return Optional.empty();
         }
     }
