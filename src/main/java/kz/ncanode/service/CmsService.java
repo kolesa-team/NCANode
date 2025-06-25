@@ -76,8 +76,7 @@ public class CmsService {
 
             // TSP
             if (cmsCreateRequest.isWithTsp()) {
-                String useTsaPolicy = Optional.ofNullable(cmsCreateRequest.getTsaPolicy()).map(TsaPolicy::getPolicyId)
-                    .orElse(TsaPolicy.TSA_GOST_POLICY.getPolicyId());
+                String useTsaPolicy = TsaPolicy.TSA_GOST2015_POLICY.getPolicyId();
 
                 SignerInformationStore signerStore = signed.getSignerInfos();
                 List<SignerInformation> signers = new ArrayList<>();
@@ -153,8 +152,7 @@ public class CmsService {
 
             // TSP
             if (cmsCreateRequest.isWithTsp()) {
-                String useTsaPolicy = Optional.ofNullable(cmsCreateRequest.getTsaPolicy()).map(TsaPolicy::getPolicyId)
-                    .orElse(TsaPolicy.TSA_GOST_POLICY.getPolicyId());
+                String useTsaPolicy = TsaPolicy.TSA_GOST2015_POLICY.getPolicyId();
 
                 SignerInformationStore signerStore = signed.getSignerInfos();
                 List<SignerInformation> signers = new ArrayList<>();
