@@ -70,7 +70,8 @@ public class XmlService {
         int i = 0;
 
         for (KeyStoreWrapper keyStore : kalkanWrapper.read(xmlSignRequest.getSigners())) {
-            document.createXmlSignature(keyStore.getCertificate(), xmlSignRequest.getSigners().get(i++).getReferenceUri())
+            val signerRequest = xmlSignRequest.getSigners().get(i++);
+            document.createXmlSignature(keyStore.getCertificate(), signerRequest.getReferenceUri(), signerRequest.isInsertSignatureAtReference())
                 .sign(keyStore.getPrivateKey());
         }
 

@@ -454,6 +454,13 @@ components:
           $ref: '#/components/schemas/SignerPassword'
         keyAlias:
           $ref: '#/components/schemas/SignerAlias'
+        referenceUri:
+          type: string
+          description: URI ссылки на подписываемый элемент (ds:Reference URI), например "#id123"
+        insertSignatureAtReference:
+          type: boolean
+          description: Если true и referenceUri указывает на конкретный элемент (вида "#id"), ds:Signature вкладывается внутрь этого элемента вместо конца корневого элемента документа
+          default: false
 
     Signers:
       type: array

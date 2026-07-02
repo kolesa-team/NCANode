@@ -7,8 +7,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.xml.security.encryption.XMLCipherParameters;
 import org.apache.xml.security.exceptions.XMLSecurityException;
 import org.apache.xml.security.transforms.Transforms;
+import org.w3c.dom.Attr;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -53,13 +57,16 @@ public class DocumentWrapper {
         return document.getDocumentElement();
     }
 
+    private static final String[] ID_ATTRIBUTE_NAMES = {"Id", "ID", "id"};
+
     /**
      * Создает и добавляет XMLDSIG подпись
      * @return XML Signature Wrapper
      */
-    public XMLSignatureWrapper createXmlSignature(CertificateWrapper certificateWrapper, String referenceUri) {
+    public XMLSignatureWrapper createXmlSignature(CertificateWrapper certificateWrapper, String referenceUri, boolean insertSignatureAtReference) {
         final XMLSignatureWrapper sig = new XMLSignatureWrapper(getDocument(), certificateWrapper.getSignAlgorithmId());
-        getDocument().getDocumentElement().appendChild(sig.getXmlSignature().getElement());
+        final Element insertionPoint = insertSignatureAtReference ? resolveInsertionPoint(referenceUri) : getDocumentElement();
+        insertionPoint.appendChild(sig.getXmlSignature().getElement());
         Transforms transforms = new Transforms(getDocument());
 
         try {
@@ -73,6 +80,53 @@ public class DocumentWrapper {
         }
 
         return sig;
+    }
+
+    /**
+     * Определяет, куда вставлять узел ds:Signature. Если referenceUri указывает на конкретный
+     * элемент (вида "#id"), подпись вкладывается внутрь этого элемента (enveloped signature),
+     * а найденный id-атрибут регистрируется как ID, чтобы Apache Santuario мог разрешить
+     * ссылку "#id" при вычислении дайджеста без необходимости в DTD/ATTLIST.
+     * Иначе подпись добавляется в конец корневого элемента, как раньше.
+     */
+    private Element resolveInsertionPoint(String referenceUri) {
+        if (referenceUri == null || !referenceUri.startsWith("#") || referenceUri.length() < 2) {
+            return getDocumentElement();
+        }
+
+        return findElementById(getDocumentElement(), referenceUri.substring(1)).orElse(getDocumentElement());
+    }
+
+    private Optional<Element> findElementById(Element element, String id) {
+        NamedNodeMap attributes = element.getAttributes();
+
+        for (int i = 0; i < attributes.getLength(); i++) {
+            Attr attr = (Attr) attributes.item(i);
+            String attrName = attr.getLocalName() != null ? attr.getLocalName() : attr.getName();
+
+            for (String idAttributeName : ID_ATTRIBUTE_NAMES) {
+                if (idAttributeName.equals(attrName) && id.equals(attr.getValue())) {
+                    element.setIdAttributeNode(attr, true);
+                    return Optional.of(element);
+                }
+            }
+        }
+
+        NodeList children = element.getChildNodes();
+
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+
+            if (child instanceof Element) {
+                Optional<Element> found = findElementById((Element) child, id);
+
+                if (found.isPresent()) {
+                    return found;
+                }
+            }
+        }
+
+        return Optional.empty();
     }
 
     @Override

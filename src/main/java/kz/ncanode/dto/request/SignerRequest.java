@@ -20,4 +20,11 @@ public class SignerRequest {
     private String keyAlias;
 
     private String referenceUri;
+
+    /**
+     * Если true и referenceUri указывает на конкретный элемент (вида "#id"),
+     * ds:Signature вкладывается внутрь этого элемента вместо конца корневого элемента документа.
+     */
+    @Builder.Default
+    private boolean insertSignatureAtReference = false;
 }
