@@ -22,9 +22,8 @@ public class SignerRequest {
     private String referenceUri;
 
     /**
-     * Если true и referenceUri указывает на конкретный элемент (вида "#id"),
-     * ds:Signature вкладывается внутрь этого элемента вместо конца корневого элемента документа.
+     * XPath-выражение, указывающее куда вложить ds:Signature. Учитывается только методом
+     * /xml/v2/sign. Если не задано, ds:Signature добавляется в конец корневого элемента документа.
      */
-    @Builder.Default
-    private boolean insertSignatureAtReference = false;
+    private String xpath;
 }

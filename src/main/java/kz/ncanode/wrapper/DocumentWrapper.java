@@ -1,5 +1,6 @@
 package kz.ncanode.wrapper;
 
+import kz.ncanode.exception.ClientException;
 import kz.ncanode.exception.ServerException;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,9 @@ import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathExpressionException;
+import javax.xml.xpath.XPathFactory;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.StringWriter;
@@ -57,16 +61,34 @@ public class DocumentWrapper {
         return document.getDocumentElement();
     }
 
-    private static final String[] ID_ATTRIBUTE_NAMES = {"Id", "ID", "id"};
-
     /**
-     * Создает и добавляет XMLDSIG подпись
+     * Создает и добавляет XMLDSIG подпись в конец корневого элемента документа
      * @return XML Signature Wrapper
      */
-    public XMLSignatureWrapper createXmlSignature(CertificateWrapper certificateWrapper, String referenceUri, boolean insertSignatureAtReference) {
+    public XMLSignatureWrapper createXmlSignature(CertificateWrapper certificateWrapper, String referenceUri) {
         final XMLSignatureWrapper sig = new XMLSignatureWrapper(getDocument(), certificateWrapper.getSignAlgorithmId());
-        final Element insertionPoint = insertSignatureAtReference ? resolveInsertionPoint(referenceUri) : getDocumentElement();
-        insertionPoint.appendChild(sig.getXmlSignature().getElement());
+        getDocumentElement().appendChild(sig.getXmlSignature().getElement());
+
+        return signReference(sig, certificateWrapper, referenceUri);
+    }
+
+    /**
+     * Создает и добавляет XMLDSIG подпись внутрь элемента, на который указывает xpath.
+     * Дополнительно резолвит referenceUri вида "#id" по атрибутам Id/ID/id, регистрируя
+     * найденный атрибут как ID через DOM, чтобы Apache Santuario мог разрешить ссылку
+     * при вычислении дайджеста без необходимости в DTD/ATTLIST.
+     * @return XML Signature Wrapper
+     */
+    public XMLSignatureWrapper createXmlSignatureAtXPath(CertificateWrapper certificateWrapper, String referenceUri, String xpath) {
+        registerReferenceIdAttribute(referenceUri);
+
+        final XMLSignatureWrapper sig = new XMLSignatureWrapper(getDocument(), certificateWrapper.getSignAlgorithmId());
+        resolveInsertionPoint(xpath).appendChild(sig.getXmlSignature().getElement());
+
+        return signReference(sig, certificateWrapper, referenceUri);
+    }
+
+    private XMLSignatureWrapper signReference(XMLSignatureWrapper sig, CertificateWrapper certificateWrapper, String referenceUri) {
         Transforms transforms = new Transforms(getDocument());
 
         try {
@@ -83,18 +105,41 @@ public class DocumentWrapper {
     }
 
     /**
-     * Определяет, куда вставлять узел ds:Signature. Если referenceUri указывает на конкретный
-     * элемент (вида "#id"), подпись вкладывается внутрь этого элемента (enveloped signature),
-     * а найденный id-атрибут регистрируется как ID, чтобы Apache Santuario мог разрешить
-     * ссылку "#id" при вычислении дайджеста без необходимости в DTD/ATTLIST.
-     * Иначе подпись добавляется в конец корневого элемента, как раньше.
+     * Определяет, куда вставлять узел ds:Signature. Если задан xpath, подпись вкладывается
+     * внутрь элемента, на который он указывает (enveloped signature). Иначе подпись
+     * добавляется в конец корневого элемента, как раньше.
      */
-    private Element resolveInsertionPoint(String referenceUri) {
-        if (referenceUri == null || !referenceUri.startsWith("#") || referenceUri.length() < 2) {
+    private Element resolveInsertionPoint(String xpath) {
+        if (xpath == null || xpath.isBlank()) {
             return getDocumentElement();
         }
 
-        return findElementById(getDocumentElement(), referenceUri.substring(1)).orElse(getDocumentElement());
+        final Node node;
+
+        try {
+            node = (Node) XPathFactory.newInstance().newXPath().evaluate(xpath, getDocument(), XPathConstants.NODE);
+        } catch (XPathExpressionException e) {
+            throw new ClientException("Invalid xpath expression: " + xpath);
+        }
+
+        if (!(node instanceof Element)) {
+            throw new ClientException("xpath does not resolve to an element: " + xpath);
+        }
+
+        return (Element) node;
+    }
+
+    /**
+     * Если referenceUri указывает на конкретный элемент (вида "#id"), находит его по атрибуту
+     * Id и регистрирует найденный атрибут как ID через DOM, чтобы Apache Santuario мог
+     * разрешить ссылку "#id" при вычислении дайджеста без необходимости в DTD/ATTLIST.
+     */
+    private void registerReferenceIdAttribute(String referenceUri) {
+        if (referenceUri == null || !referenceUri.startsWith("#") || referenceUri.length() < 2) {
+            return;
+        }
+
+        findElementById(getDocumentElement(), referenceUri.substring(1));
     }
 
     private Optional<Element> findElementById(Element element, String id) {
@@ -104,11 +149,9 @@ public class DocumentWrapper {
             Attr attr = (Attr) attributes.item(i);
             String attrName = attr.getLocalName() != null ? attr.getLocalName() : attr.getName();
 
-            for (String idAttributeName : ID_ATTRIBUTE_NAMES) {
-                if (idAttributeName.equals(attrName) && id.equals(attr.getValue())) {
-                    element.setIdAttributeNode(attr, true);
-                    return Optional.of(element);
-                }
+            if ("Id".equals(attrName) && id.equals(attr.getValue())) {
+                element.setIdAttributeNode(attr, true);
+                return Optional.of(element);
             }
         }
 

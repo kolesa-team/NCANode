@@ -61,23 +61,52 @@ public class XmlService {
      * @return Ответ с подписанным XML
      */
     public XmlSignResponse sign(XmlSignRequest xmlSignRequest) {
-        final DocumentWrapper document = read(xmlSignRequest.getXml(), xmlSignRequest.isClearSignatures());
-
-        if (xmlSignRequest.isTrimXml()) {
-            removeWhitespace(document.getDocument());
-        }
+        final DocumentWrapper document = prepareForSigning(xmlSignRequest);
 
         int i = 0;
 
         for (KeyStoreWrapper keyStore : kalkanWrapper.read(xmlSignRequest.getSigners())) {
             val signerRequest = xmlSignRequest.getSigners().get(i++);
-            document.createXmlSignature(keyStore.getCertificate(), signerRequest.getReferenceUri(), signerRequest.isInsertSignatureAtReference())
+            document.createXmlSignature(keyStore.getCertificate(), signerRequest.getReferenceUri())
                 .sign(keyStore.getPrivateKey());
         }
 
         return XmlSignResponse.builder()
             .xml(document.toString())
             .build();
+    }
+
+    /**
+     * Подписывание XML (v2) — в отличие от {@link #sign(XmlSignRequest)}, учитывает
+     * xpath у каждого signer'а и вкладывает ds:Signature внутрь элемента, на который он указывает.
+     *
+     * @param xmlSignRequest Запрос на подпись XML
+     * @return Ответ с подписанным XML
+     */
+    public XmlSignResponse signV2(XmlSignRequest xmlSignRequest) {
+        final DocumentWrapper document = prepareForSigning(xmlSignRequest);
+
+        int i = 0;
+
+        for (KeyStoreWrapper keyStore : kalkanWrapper.read(xmlSignRequest.getSigners())) {
+            val signerRequest = xmlSignRequest.getSigners().get(i++);
+            document.createXmlSignatureAtXPath(keyStore.getCertificate(), signerRequest.getReferenceUri(), signerRequest.getXpath())
+                .sign(keyStore.getPrivateKey());
+        }
+
+        return XmlSignResponse.builder()
+            .xml(document.toString())
+            .build();
+    }
+
+    private DocumentWrapper prepareForSigning(XmlSignRequest xmlSignRequest) {
+        final DocumentWrapper document = read(xmlSignRequest.getXml(), xmlSignRequest.isClearSignatures());
+
+        if (xmlSignRequest.isTrimXml()) {
+            removeWhitespace(document.getDocument());
+        }
+
+        return document;
     }
 
     /**

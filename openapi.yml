@@ -129,6 +129,41 @@ paths:
         200:
           $ref: '#/components/responses/XMLSignResponse'
 
+  /xml/v2/sign:
+    post:
+      tags:
+        - XML
+      summary: Подписывает XML ключами переданными в signers используя XMLDSig (v2)
+      description: |
+        В отличие от /xml/sign, этот метод учитывает у каждого signer'а поле xpath:
+        если оно задано, узел ds:Signature вкладывается внутрь элемента, на который
+        указывает этот XPath, вместо конца корневого элемента документа.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Запрос на подпись XML
+              required:
+                - xml
+                - signers
+              properties:
+                xml:
+                  type: string
+                  example: '<?xml version=\"1.0\" encoding=\"utf-8\"?><a><b>test</b></a>'
+                  description: XML Строка для подписи
+                signers:
+                  $ref: '#/components/schemas/Signers'
+                clearSignatures:
+                  type: boolean
+                  description: Если true, то удалить прошлы подписи и добавить новые.
+                  example: false
+                trimXml:
+                  $ref: '#/components/schemas/TrimXML'
+      responses:
+        200:
+          $ref: '#/components/responses/XMLSignResponse'
+
   /xml/verify:
     post:
       tags:
@@ -457,10 +492,13 @@ components:
         referenceUri:
           type: string
           description: URI ссылки на подписываемый элемент (ds:Reference URI), например "#id123"
-        insertSignatureAtReference:
-          type: boolean
-          description: Если true и referenceUri указывает на конкретный элемент (вида "#id"), ds:Signature вкладывается внутрь этого элемента вместо конца корневого элемента документа
-          default: false
+        xpath:
+          type: string
+          description: |
+            Учитывается только методом /xml/v2/sign. XPath-выражение, указывающее элемент,
+            внутрь которого нужно вложить ds:Signature. Если не задано, ds:Signature
+            добавляется в конец корневого элемента документа, как раньше.
+          example: /Root/Data[1]
 
     Signers:
       type: array
