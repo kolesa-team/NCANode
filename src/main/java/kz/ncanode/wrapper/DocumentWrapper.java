@@ -5,6 +5,7 @@ import kz.ncanode.exception.ServerException;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.xml.security.c14n.Canonicalizer;
 import org.apache.xml.security.encryption.XMLCipherParameters;
 import org.apache.xml.security.exceptions.XMLSecurityException;
 import org.apache.xml.security.transforms.Transforms;
@@ -77,12 +78,16 @@ public class DocumentWrapper {
      * Дополнительно резолвит referenceUri вида "#id" по атрибутам Id/ID/id, регистрируя
      * найденный атрибут как ID через DOM, чтобы Apache Santuario мог разрешить ссылку
      * при вычислении дайджеста без необходимости в DTD/ATTLIST.
+     * Если exclusive true, для ds:CanonicalizationMethod используется exclusive
+     * canonicalization вместо алгоритма по умолчанию.
      * @return XML Signature Wrapper
      */
-    public XMLSignatureWrapper createXmlSignatureAtXPath(CertificateWrapper certificateWrapper, String referenceUri, String xpath) {
+    public XMLSignatureWrapper createXmlSignatureAtXPath(CertificateWrapper certificateWrapper, String referenceUri, String xpath, boolean exclusive) {
         registerReferenceIdAttribute(referenceUri);
 
-        final XMLSignatureWrapper sig = new XMLSignatureWrapper(getDocument(), certificateWrapper.getSignAlgorithmId());
+        final XMLSignatureWrapper sig = exclusive
+            ? new XMLSignatureWrapper(getDocument(), certificateWrapper.getSignAlgorithmId(), Canonicalizer.ALGO_ID_C14N_EXCL_OMIT_COMMENTS)
+            : new XMLSignatureWrapper(getDocument(), certificateWrapper.getSignAlgorithmId());
         resolveInsertionPoint(xpath).appendChild(sig.getXmlSignature().getElement());
 
         return signReference(sig, certificateWrapper, referenceUri);

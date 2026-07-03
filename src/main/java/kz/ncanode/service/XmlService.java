@@ -77,8 +77,9 @@ public class XmlService {
     }
 
     /**
-     * Подписывание XML (v2) — в отличие от {@link #sign(XmlSignRequest)}, учитывает
-     * xpath у каждого signer'а и вкладывает ds:Signature внутрь элемента, на который он указывает.
+     * Подписывание XML (v2) — в отличие от {@link #sign(XmlSignRequest)}, учитывает у каждого
+     * signer'а xpath (куда вложить ds:Signature) и exclusive (использовать ли exclusive
+     * canonicalization для ds:CanonicalizationMethod).
      *
      * @param xmlSignRequest Запрос на подпись XML
      * @return Ответ с подписанным XML
@@ -90,7 +91,12 @@ public class XmlService {
 
         for (KeyStoreWrapper keyStore : kalkanWrapper.read(xmlSignRequest.getSigners())) {
             val signerRequest = xmlSignRequest.getSigners().get(i++);
-            document.createXmlSignatureAtXPath(keyStore.getCertificate(), signerRequest.getReferenceUri(), signerRequest.getXpath())
+            document.createXmlSignatureAtXPath(
+                    keyStore.getCertificate(),
+                    signerRequest.getReferenceUri(),
+                    signerRequest.getXpath(),
+                    signerRequest.isExclusive()
+                )
                 .sign(keyStore.getPrivateKey());
         }
 

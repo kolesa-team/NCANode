@@ -135,9 +135,11 @@ paths:
         - XML
       summary: Подписывает XML ключами переданными в signers используя XMLDSig (v2)
       description: |
-        В отличие от /xml/sign, этот метод учитывает у каждого signer'а поле xpath:
-        если оно задано, узел ds:Signature вкладывается внутрь элемента, на который
-        указывает этот XPath, вместо конца корневого элемента документа.
+        В отличие от /xml/sign, этот метод учитывает у каждого signer'а поля xpath и
+        exclusive: если xpath задан, узел ds:Signature вкладывается внутрь элемента, на
+        который он указывает, вместо конца корневого элемента документа; если exclusive
+        true, для ds:CanonicalizationMethod используется exclusive canonicalization вместо
+        алгоритма по умолчанию.
       requestBody:
         content:
           application/json:
@@ -499,6 +501,13 @@ components:
             внутрь которого нужно вложить ds:Signature. Если не задано, ds:Signature
             добавляется в конец корневого элемента документа, как раньше.
           example: /Root/Data[1]
+        exclusive:
+          type: boolean
+          description: |
+            Учитывается только методом /xml/v2/sign. Если true, для ds:CanonicalizationMethod
+            используется exclusive canonicalization (http://www.w3.org/2001/10/xml-exc-c14n#)
+            вместо алгоритма по умолчанию.
+          default: false
 
     Signers:
       type: array

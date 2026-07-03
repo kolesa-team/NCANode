@@ -26,4 +26,12 @@ public class SignerRequest {
      * /xml/v2/sign. Если не задано, ds:Signature добавляется в конец корневого элемента документа.
      */
     private String xpath;
+
+    /**
+     * Учитывается только методом /xml/v2/sign. Если true, для ds:CanonicalizationMethod
+     * используется Canonicalizer.ALGO_ID_C14N_EXCL_OMIT_COMMENTS (exclusive canonicalization),
+     * иначе — алгоритм канонизации по умолчанию.
+     */
+    @Builder.Default
+    private boolean exclusive = false;
 }
