@@ -111,11 +111,18 @@ public class DocumentWrapper {
     /**
      * Повторяет пайплайн подписи из eds-cmd-example: элемент, найденный по xpath, вырезается
      * в отдельный Document (после удаления пробельных text-node внутри него, как в
-     * eds-cmd-example's prepareForSign), подписывается там (self-reference, Id генерируется
-     * при необходимости, ds:Signature вкладывается внутрь), результат сериализуется в строку
-     * и парсится обратно (как и в eds-cmd-example), после чего подписанный элемент вставляется
-     * на место оригинала в исходном документе. Алгоритмы канонизации/трансформа — как в
-     * eds-cmd-example (SignedInfo exclusive-no-comments, Reference inclusive-with-comments).
+     * eds-cmd-example's prepareForSign), сериализуется в строку и парсится обратно ДО подписи
+     * (как в eds-cmd-example's nodeToDocument -> documentToString -> re-parse -> signEds) — этот
+     * шаг обязателен: он материализует namespace-декларации, унаследованные от предков в исходном
+     * документе (например xmlns:xsi), на теперь-самостоятельном элементе, поскольку обычный
+     * сериализатор обязан объявлять используемые namespace, чтобы фрагмент был well-formed сам по
+     * себе. Без этого шага дайджест считается по другим байтам, чем те, что eds-cmd-example's
+     * validateEds() пересчитывает при проверке (он тоже сериализует+парсит перед сверкой), и
+     * подпись не проходит проверку. Затем элемент подписывается (self-reference, Id генерируется
+     * при необходимости, ds:Signature вкладывается внутрь), результат снова сериализуется в
+     * строку и парсится обратно (как и в eds-cmd-example), после чего подписанный элемент
+     * вставляется на место оригинала в исходном документе. Алгоритмы канонизации/трансформа — как
+     * в eds-cmd-example (SignedInfo exclusive-no-comments, Reference inclusive-with-comments).
      */
     public void createXmlSignatureExtracted(CertificateWrapper certificateWrapper, PrivateKey privateKey, String xpath) {
         final Element original = resolveInsertionPoint(xpath);
@@ -125,14 +132,14 @@ public class DocumentWrapper {
             final DocumentBuilderFactory documentBuilderFactory = DocumentBuilderFactory.newInstance();
             documentBuilderFactory.setNamespaceAware(true);
 
-            final Document standaloneDocument = documentBuilderFactory.newDocumentBuilder().newDocument();
-            standaloneDocument.appendChild(standaloneDocument.importNode(original, true));
+            final Document extractedDocument = documentBuilderFactory.newDocumentBuilder().newDocument();
+            extractedDocument.appendChild(extractedDocument.importNode(original, true));
 
-            final DocumentWrapper standaloneWrapper = new DocumentWrapper(standaloneDocument);
-            standaloneWrapper.createXmlSignatureAtXPath(certificateWrapper, null, null, true).sign(privateKey);
+            final DocumentWrapper preSignWrapper = new DocumentWrapper(new DocumentWrapper(extractedDocument).toString());
+            preSignWrapper.createXmlSignatureAtXPath(certificateWrapper, null, null, true).sign(privateKey);
 
-            final DocumentWrapper reparsedWrapper = new DocumentWrapper(standaloneWrapper.toString());
-            final Node importedSigned = getDocument().importNode(reparsedWrapper.getDocumentElement(), true);
+            final DocumentWrapper signedWrapper = new DocumentWrapper(preSignWrapper.toString());
+            final Node importedSigned = getDocument().importNode(signedWrapper.getDocumentElement(), true);
 
             original.getParentNode().replaceChild(importedSigned, original);
         } catch (ParserConfigurationException e) {
