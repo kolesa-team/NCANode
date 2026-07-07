@@ -7,7 +7,6 @@ import kz.ncanode.exception.ClientException;
 import kz.ncanode.exception.KeyException;
 import kz.ncanode.exception.ServerException;
 import kz.ncanode.wrapper.CertificateWrapper;
-import kz.ncanode.wrapper.DocumentWrapper;
 import kz.ncanode.wrapper.KalkanWrapper;
 import kz.ncanode.wrapper.KeyStoreWrapper;
 import kz.ncanode.wrapper.XMLSignatureWrapper;
@@ -121,11 +120,9 @@ public class WsseService {
     }
 
     /**
-     * Подписывает Wsse XML (v3) — аналог {@link #sign(WsseSignRequest)}, но с двумя отличиями,
-     * чтобы точно повторить KalkanWrapper.signWsse из eds-cmd-example: у ds:Signature
-     * проставляется случайный Id, а у wsse:Security нет атрибута mustUnderstand (используется
-     * 3-аргументный конструктор WSSecHeader с mustUnderstand=false, как в eds-cmd-example, а не
-     * setMustUnderstand(true)).
+     * Подписывает Wsse XML (v3) — использует те же ключи из signers, что и {@link #sign}, но
+     * подпись строится через {@link #signWsseEdsCompatible}, дословно повторяющий
+     * KalkanWrapper.signWsse из eds-cmd-example.
      *
      * @param wsseSignRequest Запрос на подпись
      * @return Подписанный SOAP-конверт
@@ -146,49 +143,37 @@ public class WsseService {
     }
 
     /**
-     * В отличие от {@link #sign(WsseSignRequest)}, здесь не используется SAAJ (javax.xml.soap) —
-     * весь документ, включая уже подписанный EDS-блок внутри data, парсится и сериализуется
-     * обычным DOM (DocumentBuilderFactory/Transformer), тем же способом, каким уже подписывался
-     * EDS-слой. SAAJ имеет свою собственную DOM-реализацию, которая при парсинге/сериализации
-     * документа может переоформить текст base64-значений (DigestValue/SignatureValue) внутри уже
-     * готовой EDS-подписи иначе, чем было при её вычислении — тогда байты SignedInfo меняются, и
-     * подпись перестаёт проходить криптографическую проверку, хотя сам текст значения не менялся.
-     * Даже eds-cmd-example, который использует SAAJ для этого шага, явно перепроверяет EDS-подпись
-     * после WSSE-обёртывания в своём Main.java — то есть это известное слабое место, а не то, что
-     * нужно копировать.
+     * Дословный порт KalkanWrapper.signWsse из eds-cmd-example (SAAJ, не голый DOM): bodyId
+     * проставляется через SOAPBody.addAttribute + setIdAttributeNS, ds:Signature получает
+     * собственный случайный Id, CanonicalizationMethod/SignatureMethod собираются как элементы
+     * (exclusive c14n без комментариев), mustUnderstand не выставляется (3-аргументный
+     * WSSecHeader), KeyInfo — через SecurityTokenReference/KeyIdentifier.
      */
     private String signWsseEdsCompatible(String xml, KeyStoreWrapper keystore) throws Exception {
         final CertificateWrapper cert = keystore.getCertificate();
+        final String bodyId = "id-" + UUID.randomUUID();
 
-        final DocumentWrapper documentWrapper = new DocumentWrapper(xml);
-        final Document doc = documentWrapper.getDocument();
-        final Element envelope = documentWrapper.getDocumentElement();
-        final String soapNs = envelope.getNamespaceURI();
+        SOAPMessage msg = MessageFactory.newInstance().createMessage(null, new ByteArrayInputStream(
+            xml.getBytes(StandardCharsets.UTF_8)
+        ));
 
-        final Element body = firstElementByTagNameNS(doc, soapNs, "Body");
-        Element header = firstElementByTagNameNS(doc, soapNs, "Header");
+        SOAPEnvelope envelope = msg.getSOAPPart().getEnvelope();
+        SOAPBody body = envelope.getBody();
+        body.addAttribute(new QName(WSConstants.WSU_NS, "Id", WSConstants.WSU_PREFIX), bodyId);
+        body.setIdAttributeNS(WSConstants.WSU_NS, "Id", true);
 
+        SOAPHeader header = envelope.getHeader();
         if (header == null) {
-            header = doc.createElementNS(soapNs, qualify(envelope.getPrefix(), "Header"));
-            envelope.insertBefore(header, envelope.getFirstChild());
+            header = envelope.addHeader();
         }
 
-        String bodyId = "id-" + UUID.randomUUID();
-        // setAttributeNS for a prefixed attribute does not create a real xmlns:wsu declaration
-        // node on the live DOM - the Transformer only synthesizes one later, during serialization.
-        // Apache Santuario's C14N walks the live tree during sign(), so without this the digest is
-        // computed without xmlns:wsu, while eds-cmd-example re-parses the serialized XML (which by
-        // then does have xmlns:wsu) and recomputes a different digest.
-        body.setAttributeNS("http://www.w3.org/2000/xmlns/", "xmlns:" + WSConstants.WSU_PREFIX, WSConstants.WSU_NS);
-        body.setAttributeNS(WSConstants.WSU_NS, WSConstants.WSU_PREFIX + ":Id", bodyId);
-        body.setIdAttributeNS(WSConstants.WSU_NS, "Id", true);
+        Document doc = envelope.getOwnerDocument();
 
         Transforms transforms = new Transforms(doc);
         transforms.addTransform(Transforms.TRANSFORM_C14N_EXCL_OMIT_COMMENTS);
 
         XMLSignatureWrapper signature = new XMLSignatureWrapper(doc, cert.getSignAlgorithmId(), Canonicalizer.ALGO_ID_C14N_EXCL_OMIT_COMMENTS);
         signature.getXmlSignature().setId(UUID.randomUUID().toString());
-
         signature.getXmlSignature().addDocument("#" + bodyId, transforms, cert.getHashAlgorithmId());
         signature.getXmlSignature().getSignedInfo().getSignatureMethodElement().setNodeValue(Transforms.TRANSFORM_C14N_EXCL_OMIT_COMMENTS);
 
@@ -197,22 +182,20 @@ public class WsseService {
         header.appendChild(secHeader.getSecurityHeaderElement());
         header.getFirstChild().appendChild(signature.getXmlSignature().getElement());
 
-        SecurityTokenReference reference = new SecurityTokenReference(doc);
+        // eds-cmd-example's signWsse uses org.apache.wss4j.common.token.SecurityTokenReference
+        // here (a different, newer class than org.apache.ws.security.message.token.SecurityTokenReference
+        // used by #sign and #verify) - kept fully-qualified to avoid clashing with that import.
+        org.apache.wss4j.common.token.SecurityTokenReference reference = new org.apache.wss4j.common.token.SecurityTokenReference(doc);
         reference.setKeyIdentifier(cert.getX509Certificate());
-
         signature.getXmlSignature().getKeyInfo().addUnknownElement(reference.getElement());
+
         signature.getXmlSignature().sign(keystore.getPrivateKey());
 
-        return documentWrapper.toString();
-    }
-
-    private static String qualify(String prefix, String localName) {
-        return (prefix == null || prefix.isEmpty()) ? localName : prefix + ":" + localName;
-    }
-
-    private static Element firstElementByTagNameNS(Document doc, String namespaceURI, String localName) {
-        NodeList found = doc.getElementsByTagNameNS(namespaceURI, localName);
-        return found.getLength() > 0 ? (Element) found.item(0) : null;
+        try (StringWriter os = new StringWriter()) {
+            Transformer trans = TransformerFactory.newInstance().newTransformer();
+            trans.transform(new DOMSource(doc), new StreamResult(os));
+            return os.toString();
+        }
     }
 
     /**
