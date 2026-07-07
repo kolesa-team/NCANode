@@ -174,6 +174,12 @@ public class WsseService {
         }
 
         String bodyId = "id-" + UUID.randomUUID();
+        // setAttributeNS for a prefixed attribute does not create a real xmlns:wsu declaration
+        // node on the live DOM - the Transformer only synthesizes one later, during serialization.
+        // Apache Santuario's C14N walks the live tree during sign(), so without this the digest is
+        // computed without xmlns:wsu, while eds-cmd-example re-parses the serialized XML (which by
+        // then does have xmlns:wsu) and recomputes a different digest.
+        body.setAttributeNS("http://www.w3.org/2000/xmlns/", "xmlns:" + WSConstants.WSU_PREFIX, WSConstants.WSU_NS);
         body.setAttributeNS(WSConstants.WSU_NS, WSConstants.WSU_PREFIX + ":Id", bodyId);
         body.setIdAttributeNS(WSConstants.WSU_NS, "Id", true);
 
