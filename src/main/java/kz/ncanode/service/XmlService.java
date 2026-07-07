@@ -157,7 +157,7 @@ public class XmlService {
             if (!xmlSignature.check() || !cert.isValid(currentDate, checkOcsp, checkCrl)) {
                 valid = false;
             }
-            root.removeChild(signature);
+            signature.getParentNode().removeChild(signature);
 
             certs.add(cert);
         }

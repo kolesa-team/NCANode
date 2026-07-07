@@ -135,11 +135,13 @@ paths:
         - XML
       summary: Подписывает XML ключами переданными в signers используя XMLDSig (v2)
       description: |
-        В отличие от /xml/sign, этот метод учитывает у каждого signer'а поля xpath и
-        exclusive: если xpath задан, узел ds:Signature вкладывается внутрь элемента, на
-        который он указывает, вместо конца корневого элемента документа; если exclusive
-        true, для ds:CanonicalizationMethod используется exclusive canonicalization вместо
-        алгоритма по умолчанию.
+        В отличие от /xml/sign, этот метод учитывает у каждого signer'а поля xpath,
+        referenceUri и exclusive: если xpath задан, узел ds:Signature вкладывается внутрь
+        элемента, на который он указывает, вместо конца корневого элемента документа; если
+        referenceUri не задан, этот же элемент становится self-reference — при отсутствии
+        у него атрибута Id он генерируется автоматически; если exclusive true, для
+        ds:CanonicalizationMethod используется exclusive canonicalization вместо алгоритма
+        по умолчанию. Сам узел ds:Signature всегда получает случайно сгенерированный Id.
       requestBody:
         content:
           application/json:
@@ -493,7 +495,11 @@ components:
           $ref: '#/components/schemas/SignerAlias'
         referenceUri:
           type: string
-          description: URI ссылки на подписываемый элемент (ds:Reference URI), например "#id123"
+          description: |
+            URI ссылки на подписываемый элемент (ds:Reference URI), например "#id123".
+            Для /xml/v2/sign необязателен: если не задан, элемент, найденный по xpath, сам
+            становится точкой отсчёта (self-reference) — если у него нет атрибута Id, он
+            генерируется автоматически, и в ds:Reference подставляется "#" + этот Id.
         xpath:
           type: string
           description: |

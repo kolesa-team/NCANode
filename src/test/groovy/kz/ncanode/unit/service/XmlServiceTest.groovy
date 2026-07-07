@@ -6,6 +6,7 @@ import kz.ncanode.dto.crl.CrlResult
 import kz.ncanode.dto.crl.CrlStatus
 import kz.ncanode.dto.ocsp.OcspResult
 import kz.ncanode.dto.ocsp.OcspStatus
+import kz.ncanode.dto.request.SignerRequest
 import kz.ncanode.dto.request.XmlSignRequest
 import kz.ncanode.exception.ServerException
 import kz.ncanode.service.CertificateService
@@ -29,6 +30,10 @@ class XmlServiceTest extends Specification implements WithTestData {
     private final static String XML_VALID_STRING = '<?xml version="1.0" encoding="utf-8"?><a><b>test</b></a>'
     private final static Closure<String> XML_VALID_STRING_WITH_REFERENCE = () -> "<?xml version=\"1.0\" encoding=\"utf-8\"?><!DOCTYPE a [\n" +
         "<!ATTLIST a id ID #IMPLIED> ]><a id=\"${REFERENCE_URI}\"><b>test</b></a>"
+    private final static Closure<String> XML_VALID_STRING_WITH_ID_ELEMENT = () ->
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?><a><b Id=\"${REFERENCE_URI}\"><c>test</c></b></a>"
+    private final static Closure<String> XML_VALID_STRING_WITHOUT_ID_ELEMENT = () ->
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?><a><b><c>test</c></b></a>"
     private final static String XML_SIGNED_VALID_STRING = """
 <?xml version="1.0" encoding="utf-8" standalone="no"?><a><b>test</b><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
 <ds:SignedInfo>
@@ -281,6 +286,95 @@ KR8n3tylbHk=
 
         references.item(0).attributes.getNamedItem("URI").textContent == ('#' + REFERENCE_URI)
         references.item(1).attributes.getNamedItem("URI").textContent == ('#' + REFERENCE_URI)
+    }
+
+    @Unroll("#caseName")
+    def "check v2 sign at xpath and verify"() {
+        given: 'create request with xpath pointing inside the referenced element'
+        def signer = SignerRequest.builder()
+            .referenceUri('#' + REFERENCE_URI)
+            .xpath('/a/b')
+            .exclusive(exclusive)
+            .key(KEY_INDIVIDUAL_VALID_SIGN_2004)
+            .password(KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD)
+            .build()
+        def request = XmlSignRequest.builder().xml(XML_VALID_STRING_WITH_ID_ELEMENT()).signers([signer]).build()
+
+        when: 'sign v2'
+        def signResponse = xmlService.signV2(request)
+
+        then: 'no exception and signature is nested inside referenced element, not at document root'
+        noExceptionThrown()
+        signResponse != null
+
+        and: 'ds:Signature is a child of <b>, not of <a>'
+        def signed = DOMBuilder.parse(new StringReader(signResponse.xml))
+        def bElement = signed.documentElement.getElementsByTagName('b').item(0)
+        bElement.getElementsByTagName('ds:Signature').getLength() == 1
+        signed.documentElement.getChildNodes().getLength() == 1
+
+        and: 'canonicalization method matches the exclusive flag'
+        def c14n = signed.documentElement.getElementsByTagName('ds:CanonicalizationMethod').item(0)
+        c14n.attributes.getNamedItem('Algorithm').textContent == expectedC14nAlgorithm
+
+        when: 'verify the produced signature'
+        when(certificateService.getCurrentDate()).thenReturn(buildValidDate())
+        when(certificateService.attachValidationData(any(), anyBoolean(), anyBoolean()))
+            .thenAnswer(new CertificateServiceAnswer(mockIssuerCertificate(true), OcspResult.ACTIVE, CrlResult.ACTIVE))
+        def verifyResponse = xmlService.verify(signResponse.xml, false, false)
+
+        then: 'signature is valid'
+        verifyResponse.valid
+        verifyResponse.signers.size() == 1
+
+        where:
+        caseName                     | exclusive || expectedC14nAlgorithm
+        'default canonicalization'   | false     || 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315'
+        'exclusive canonicalization' | true      || 'http://www.w3.org/2001/10/xml-exc-c14n#'
+    }
+
+    def "check v2 sign self-reference when referenceUri is not set"() {
+        given: 'create request without referenceUri, target element has no Id attribute'
+        def signer = SignerRequest.builder()
+            .xpath('/a/b')
+            .exclusive(true)
+            .key(KEY_INDIVIDUAL_VALID_SIGN_2004)
+            .password(KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD)
+            .build()
+        def request = XmlSignRequest.builder().xml(XML_VALID_STRING_WITHOUT_ID_ELEMENT()).signers([signer]).build()
+
+        when: 'sign v2'
+        def signResponse = xmlService.signV2(request)
+
+        then: 'no exception'
+        noExceptionThrown()
+        signResponse != null
+
+        and: 'target element got an auto-generated Id and ds:Signature is nested inside it'
+        def signed = DOMBuilder.parse(new StringReader(signResponse.xml))
+        def bElement = signed.documentElement.getElementsByTagName('b').item(0)
+        def generatedId = bElement.attributes.getNamedItem('Id')?.textContent
+        generatedId != null && !generatedId.isEmpty()
+        bElement.getElementsByTagName('ds:Signature').getLength() == 1
+
+        and: 'ds:Reference URI points to the auto-generated Id'
+        def reference = signed.documentElement.getElementsByTagName('ds:Reference').item(0)
+        reference.attributes.getNamedItem('URI').textContent == ('#' + generatedId)
+
+        and: 'ds:Signature itself has its own Id'
+        def signatureElement = signed.documentElement.getElementsByTagName('ds:Signature').item(0)
+        def signatureId = signatureElement.attributes.getNamedItem('Id')?.textContent
+        signatureId != null && !signatureId.isEmpty()
+
+        when: 'verify the produced signature'
+        when(certificateService.getCurrentDate()).thenReturn(buildValidDate())
+        when(certificateService.attachValidationData(any(), anyBoolean(), anyBoolean()))
+            .thenAnswer(new CertificateServiceAnswer(mockIssuerCertificate(true), OcspResult.ACTIVE, CrlResult.ACTIVE))
+        def verifyResponse = xmlService.verify(signResponse.xml, false, false)
+
+        then: 'signature is valid'
+        verifyResponse.valid
+        verifyResponse.signers.size() == 1
     }
 
     @Unroll("#caseName")

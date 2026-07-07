@@ -34,6 +34,7 @@ import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 @Slf4j
 @Getter
@@ -75,22 +76,55 @@ public class DocumentWrapper {
 
     /**
      * Создает и добавляет XMLDSIG подпись внутрь элемента, на который указывает xpath.
-     * Дополнительно резолвит referenceUri вида "#id" по атрибутам Id/ID/id, регистрируя
-     * найденный атрибут как ID через DOM, чтобы Apache Santuario мог разрешить ссылку
-     * при вычислении дайджеста без необходимости в DTD/ATTLIST.
+     * Если referenceUri передан явно, ведёт себя как раньше: резолвит его по атрибуту Id
+     * (регистрируя найденный атрибут как ID через DOM, чтобы Apache Santuario мог разрешить
+     * ссылку при вычислении дайджеста без необходимости в DTD/ATTLIST) независимо от того,
+     * куда указывает xpath.
+     * Если referenceUri не передан, элемент, найденный по xpath, сам становится точкой
+     * отсчёта (self-reference, как в eds-cmd-example): если у него нет атрибута Id, он
+     * генерируется (UUID), и Reference URI выставляется как "#" + этот Id.
+     * ds:Signature получает собственный случайный Id.
      * Если exclusive true, для ds:CanonicalizationMethod используется exclusive
      * canonicalization вместо алгоритма по умолчанию.
      * @return XML Signature Wrapper
      */
     public XMLSignatureWrapper createXmlSignatureAtXPath(CertificateWrapper certificateWrapper, String referenceUri, String xpath, boolean exclusive) {
-        registerReferenceIdAttribute(referenceUri);
+        final Element insertionPoint = resolveInsertionPoint(xpath);
+        final String effectiveReferenceUri = resolveReferenceUri(referenceUri, insertionPoint);
 
         final XMLSignatureWrapper sig = exclusive
             ? new XMLSignatureWrapper(getDocument(), certificateWrapper.getSignAlgorithmId(), Canonicalizer.ALGO_ID_C14N_EXCL_OMIT_COMMENTS)
             : new XMLSignatureWrapper(getDocument(), certificateWrapper.getSignAlgorithmId());
-        resolveInsertionPoint(xpath).appendChild(sig.getXmlSignature().getElement());
+        sig.getXmlSignature().setId(UUID.randomUUID().toString());
+        insertionPoint.appendChild(sig.getXmlSignature().getElement());
 
-        return signReference(sig, certificateWrapper, referenceUri);
+        return signReference(sig, certificateWrapper, effectiveReferenceUri);
+    }
+
+    /**
+     * Если referenceUri передан явно — резолвит его как раньше (по всему документу, по атрибуту Id).
+     * Иначе — self-reference на insertionPoint: генерирует Id, если его нет, и возвращает "#" + Id.
+     */
+    private String resolveReferenceUri(String referenceUri, Element insertionPoint) {
+        if (referenceUri != null && !referenceUri.isBlank()) {
+            registerReferenceIdAttribute(referenceUri);
+            return referenceUri;
+        }
+
+        return "#" + ensureIdAttribute(insertionPoint);
+    }
+
+    private String ensureIdAttribute(Element element) {
+        String id = element.getAttribute("Id");
+
+        if (id.isEmpty()) {
+            id = UUID.randomUUID().toString();
+            element.setAttribute("Id", id);
+        }
+
+        element.setIdAttributeNode(element.getAttributeNode("Id"), true);
+
+        return id;
     }
 
     private XMLSignatureWrapper signReference(XMLSignatureWrapper sig, CertificateWrapper certificateWrapper, String referenceUri) {
