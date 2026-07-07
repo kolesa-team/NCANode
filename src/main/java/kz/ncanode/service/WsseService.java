@@ -7,6 +7,7 @@ import kz.ncanode.exception.ClientException;
 import kz.ncanode.exception.KeyException;
 import kz.ncanode.exception.ServerException;
 import kz.ncanode.wrapper.CertificateWrapper;
+import kz.ncanode.wrapper.DocumentWrapper;
 import kz.ncanode.wrapper.KalkanWrapper;
 import kz.ncanode.wrapper.KeyStoreWrapper;
 import kz.ncanode.wrapper.XMLSignatureWrapper;
@@ -144,24 +145,36 @@ public class WsseService {
         }
     }
 
+    /**
+     * В отличие от {@link #sign(WsseSignRequest)}, здесь не используется SAAJ (javax.xml.soap) —
+     * весь документ, включая уже подписанный EDS-блок внутри data, парсится и сериализуется
+     * обычным DOM (DocumentBuilderFactory/Transformer), тем же способом, каким уже подписывался
+     * EDS-слой. SAAJ имеет свою собственную DOM-реализацию, которая при парсинге/сериализации
+     * документа может переоформить текст base64-значений (DigestValue/SignatureValue) внутри уже
+     * готовой EDS-подписи иначе, чем было при её вычислении — тогда байты SignedInfo меняются, и
+     * подпись перестаёт проходить криптографическую проверку, хотя сам текст значения не менялся.
+     * Даже eds-cmd-example, который использует SAAJ для этого шага, явно перепроверяет EDS-подпись
+     * после WSSE-обёртывания в своём Main.java — то есть это известное слабое место, а не то, что
+     * нужно копировать.
+     */
     private String signWsseEdsCompatible(String xml, KeyStoreWrapper keystore) throws Exception {
         final CertificateWrapper cert = keystore.getCertificate();
 
-        SOAPMessage msg = MessageFactory.newInstance().createMessage(null, new ByteArrayInputStream(
-            xml.getBytes(StandardCharsets.UTF_8)
-        ));
-        SOAPEnvelope env = msg.getSOAPPart().getEnvelope();
-        SOAPBody body = env.getBody();
+        final DocumentWrapper documentWrapper = new DocumentWrapper(xml);
+        final Document doc = documentWrapper.getDocument();
+        final Element envelope = documentWrapper.getDocumentElement();
+        final String soapNs = envelope.getNamespaceURI();
 
-        String bodyId = "id-" + UUID.randomUUID();
-        body.addAttribute(new QName(WSConstants.WSU_NS, "Id", WSConstants.WSU_PREFIX), bodyId);
+        final Element body = firstElementByTagNameNS(doc, soapNs, "Body");
+        Element header = firstElementByTagNameNS(doc, soapNs, "Header");
 
-        SOAPHeader header = env.getHeader();
         if (header == null) {
-            header = env.addHeader();
+            header = doc.createElementNS(soapNs, qualify(envelope.getPrefix(), "Header"));
+            envelope.insertBefore(header, envelope.getFirstChild());
         }
 
-        Document doc = env.getOwnerDocument();
+        String bodyId = "id-" + UUID.randomUUID();
+        body.setAttributeNS(WSConstants.WSU_NS, WSConstants.WSU_PREFIX + ":Id", bodyId);
 
         Transforms transforms = new Transforms(doc);
         transforms.addTransform(Transforms.TRANSFORM_C14N_EXCL_OMIT_COMMENTS);
@@ -183,10 +196,16 @@ public class WsseService {
         signature.getXmlSignature().getKeyInfo().addUnknownElement(reference.getElement());
         signature.getXmlSignature().sign(keystore.getPrivateKey());
 
-        try (StringWriter os = new StringWriter()) {
-            TransformerFactory.newInstance().newTransformer().transform(new DOMSource(doc), new StreamResult(os));
-            return os.toString();
-        }
+        return documentWrapper.toString();
+    }
+
+    private static String qualify(String prefix, String localName) {
+        return (prefix == null || prefix.isEmpty()) ? localName : prefix + ":" + localName;
+    }
+
+    private static Element firstElementByTagNameNS(Document doc, String namespaceURI, String localName) {
+        NodeList found = doc.getElementsByTagNameNS(namespaceURI, localName);
+        return found.getLength() > 0 ? (Element) found.item(0) : null;
     }
 
     /**
