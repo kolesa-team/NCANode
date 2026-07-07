@@ -510,9 +510,14 @@ components:
         exclusive:
           type: boolean
           description: |
-            Учитывается только методом /xml/v2/sign. Если true, для ds:CanonicalizationMethod
-            используется exclusive canonicalization (http://www.w3.org/2001/10/xml-exc-c14n#)
-            вместо алгоритма по умолчанию.
+            Учитывается только методом /xml/v2/sign. Если true, exclusive canonicalization
+            (http://www.w3.org/2001/10/xml-exc-c14n#) используется как для
+            ds:CanonicalizationMethod у SignedInfo, так и для трансформа канонизации у самой
+            ds:Reference (вместо inclusive canonicalization по умолчанию). Рекомендуется
+            включать, если подписанный элемент будет впоследствии вложен в другой документ
+            (например, обёрнут в WSSE) — оборачивание может добавить новые namespace-декларации
+            на предках, а inclusive c14n подтягивает их при пересчёте дайджеста, из-за чего
+            подпись перестаёт проходить проверку; exclusive c14n от этого не зависит.
           default: false
 
     Signers:

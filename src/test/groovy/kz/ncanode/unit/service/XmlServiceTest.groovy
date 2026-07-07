@@ -333,6 +333,37 @@ KR8n3tylbHk=
         'exclusive canonicalization' | true      || 'http://www.w3.org/2001/10/xml-exc-c14n#'
     }
 
+    @Unroll("#caseName")
+    def "check v2 sign robustness to being wrapped in another document later"() {
+        given: 'sign with the given exclusive flag'
+        def signer = SignerRequest.builder()
+            .referenceUri('#' + REFERENCE_URI)
+            .xpath('/a/b')
+            .exclusive(exclusive)
+            .key(KEY_INDIVIDUAL_VALID_SIGN_2004)
+            .password(KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD)
+            .build()
+        def request = XmlSignRequest.builder().xml(XML_VALID_STRING_WITH_ID_ELEMENT()).signers([signer]).build()
+        def signResponse = xmlService.signV2(request)
+
+        when: 'the signed document is later wrapped in another element declaring a brand-new ancestor namespace (e.g. WSSE-style wrapping)'
+        def wrappedXml = "<wrapper xmlns:extra=\"urn:extra:added-later\">" +
+            signResponse.xml.replaceFirst('<\\?xml[^>]*\\?>', '') +
+            "</wrapper>"
+        when(certificateService.getCurrentDate()).thenReturn(buildValidDate())
+        when(certificateService.attachValidationData(any(), anyBoolean(), anyBoolean()))
+            .thenAnswer(new CertificateServiceAnswer(mockIssuerCertificate(true), OcspResult.ACTIVE, CrlResult.ACTIVE))
+        def verifyResponse = xmlService.verify(wrappedXml, false, false)
+
+        then: 'exclusive c14n stays valid after wrapping, inclusive c14n does not'
+        verifyResponse.valid == expectedValidAfterWrapping
+
+        where:
+        caseName                          | exclusive || expectedValidAfterWrapping
+        'inclusive breaks after wrapping' | false     || false
+        'exclusive survives wrapping'     | true      || true
+    }
+
     def "check v2 sign self-reference when referenceUri is not set"() {
         given: 'create request without referenceUri, target element has no Id attribute'
         def signer = SignerRequest.builder()

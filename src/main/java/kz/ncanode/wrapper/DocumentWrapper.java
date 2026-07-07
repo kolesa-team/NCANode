@@ -71,7 +71,7 @@ public class DocumentWrapper {
         final XMLSignatureWrapper sig = new XMLSignatureWrapper(getDocument(), certificateWrapper.getSignAlgorithmId());
         getDocumentElement().appendChild(sig.getXmlSignature().getElement());
 
-        return signReference(sig, certificateWrapper, referenceUri);
+        return signReference(sig, certificateWrapper, referenceUri, XMLCipherParameters.N14C_XML_CMMNTS);
     }
 
     /**
@@ -84,8 +84,12 @@ public class DocumentWrapper {
      * отсчёта (self-reference, как в eds-cmd-example): если у него нет атрибута Id, он
      * генерируется (UUID), и Reference URI выставляется как "#" + этот Id.
      * ds:Signature получает собственный случайный Id.
-     * Если exclusive true, для ds:CanonicalizationMethod используется exclusive
-     * canonicalization вместо алгоритма по умолчанию.
+     * Если exclusive true, для ds:CanonicalizationMethod у SignedInfo, а также для
+     * трансформа канонизации у самой ds:Reference используется exclusive canonicalization
+     * вместо inclusive. Это важно, если подписанный элемент впоследствии будет вложен в
+     * другой документ (например, обёрнут в WSSE) — оборачивание может добавить новые
+     * namespace-декларации на предках, а inclusive c14n обязан их подтягивать при
+     * пересчёте дайджеста, из-за чего подпись сломается; exclusive c14n от этого не зависит.
      * @return XML Signature Wrapper
      */
     public XMLSignatureWrapper createXmlSignatureAtXPath(CertificateWrapper certificateWrapper, String referenceUri, String xpath, boolean exclusive) {
@@ -98,7 +102,9 @@ public class DocumentWrapper {
         sig.getXmlSignature().setId(UUID.randomUUID().toString());
         insertionPoint.appendChild(sig.getXmlSignature().getElement());
 
-        return signReference(sig, certificateWrapper, effectiveReferenceUri);
+        final String referenceC14nAlgorithm = exclusive ? Transforms.TRANSFORM_C14N_EXCL_WITH_COMMENTS : XMLCipherParameters.N14C_XML_CMMNTS;
+
+        return signReference(sig, certificateWrapper, effectiveReferenceUri, referenceC14nAlgorithm);
     }
 
     /**
@@ -127,12 +133,12 @@ public class DocumentWrapper {
         return id;
     }
 
-    private XMLSignatureWrapper signReference(XMLSignatureWrapper sig, CertificateWrapper certificateWrapper, String referenceUri) {
+    private XMLSignatureWrapper signReference(XMLSignatureWrapper sig, CertificateWrapper certificateWrapper, String referenceUri, String c14nAlgorithm) {
         Transforms transforms = new Transforms(getDocument());
 
         try {
             transforms.addTransform(Transforms.TRANSFORM_ENVELOPED_SIGNATURE);
-            transforms.addTransform(XMLCipherParameters.N14C_XML_CMMNTS);
+            transforms.addTransform(c14nAlgorithm);
             sig.getXmlSignature().addDocument(Optional.ofNullable(referenceUri).orElse(""), transforms, certificateWrapper.getHashAlgorithmId());
             sig.getXmlSignature().addKeyInfo(certificateWrapper.getX509Certificate());
         } catch (XMLSecurityException e) {
