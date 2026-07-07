@@ -3,10 +3,8 @@ package kz.ncanode.controller;
 import kz.ncanode.dto.certificate.CertificateRevocation;
 import kz.ncanode.dto.request.XmlSignRequest;
 import kz.ncanode.dto.request.XmlVerifyRequest;
-import kz.ncanode.dto.request.XmlWsseSignRequest;
 import kz.ncanode.dto.response.VerificationResponse;
 import kz.ncanode.dto.response.XmlSignResponse;
-import kz.ncanode.service.WsseService;
 import kz.ncanode.service.XmlService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -22,7 +20,6 @@ import javax.validation.Valid;
 @RequiredArgsConstructor
 public class XmlController {
     private final XmlService xmlService;
-    private final WsseService wsseService;
 
     @PostMapping("/sign")
     public ResponseEntity<XmlSignResponse> sign(@Valid @RequestBody XmlSignRequest xmlSignRequest) {
@@ -35,8 +32,8 @@ public class XmlController {
     }
 
     @PostMapping("/v3/sign")
-    public ResponseEntity<XmlSignResponse> signV3(@Valid @RequestBody XmlWsseSignRequest xmlWsseSignRequest) {
-        return ResponseEntity.ok(wsseService.signEdsThenWsse(xmlWsseSignRequest));
+    public ResponseEntity<XmlSignResponse> signV3(@Valid @RequestBody XmlSignRequest xmlSignRequest) {
+        return ResponseEntity.ok(xmlService.signV3(xmlSignRequest));
     }
 
     @PostMapping("/verify")

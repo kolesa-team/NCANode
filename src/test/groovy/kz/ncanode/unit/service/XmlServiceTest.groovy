@@ -435,6 +435,59 @@ KR8n3tylbHk=
         verifyResponse.signers.size() == 1
     }
 
+    def "check v3 sign extracts, signs and splices the element back, matching eds-cmd-example"() {
+        given: 'target element without Id and with whitespace text nodes inside'
+        def signer = SignerRequest.builder()
+            .xpath('/a/b')
+            .key(KEY_INDIVIDUAL_VALID_SIGN_2004)
+            .password(KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD)
+            .build()
+        def xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><a><b>\n  <c>test</c>\n</b></a>"
+        def request = XmlSignRequest.builder().xml(xml).signers([signer]).build()
+
+        when: 'sign v3'
+        def signResponse = xmlService.signV3(request)
+
+        then: 'no exception'
+        noExceptionThrown()
+        signResponse != null
+
+        and: 'the signed <b> replaced the original one-for-one, <a> still has a single child'
+        def signed = DOMBuilder.parse(new StringReader(signResponse.xml))
+        signed.documentElement.getChildNodes().getLength() == 1
+        def bElement = signed.documentElement.getElementsByTagName('b').item(0)
+        bElement.getElementsByTagName('ds:Signature').getLength() == 1
+
+        and: 'the target element got an auto-generated Id, referenced by ds:Reference'
+        def generatedId = bElement.attributes.getNamedItem('Id')?.textContent
+        generatedId != null && !generatedId.isEmpty()
+        def reference = bElement.getElementsByTagName('ds:Reference').item(0)
+        reference.attributes.getNamedItem('URI').textContent == ('#' + generatedId)
+
+        and: 'ds:Signature itself has its own Id'
+        def signatureElement = bElement.getElementsByTagName('ds:Signature').item(0)
+        def signatureId = signatureElement.attributes.getNamedItem('Id')?.textContent
+        signatureId != null && !signatureId.isEmpty()
+
+        and: 'the SignedInfo canonicalization is exclusive, matching eds-cmd-example'
+        def canonicalizationMethod = bElement.getElementsByTagName('ds:CanonicalizationMethod').item(0)
+        canonicalizationMethod.attributes.getNamedItem('Algorithm').textContent == 'http://www.w3.org/2001/10/xml-exc-c14n#'
+
+        and: 'the reference transform is inclusive-with-comments, matching eds-cmd-example'
+        def c14nTransform = bElement.getElementsByTagName('ds:Transform').item(1)
+        c14nTransform.attributes.getNamedItem('Algorithm').textContent == 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments'
+
+        when: 'verify the produced signature'
+        when(certificateService.getCurrentDate()).thenReturn(buildValidDate())
+        when(certificateService.attachValidationData(any(), anyBoolean(), anyBoolean()))
+            .thenAnswer(new CertificateServiceAnswer(mockIssuerCertificate(true), OcspResult.ACTIVE, CrlResult.ACTIVE))
+        def verifyResponse = xmlService.verify(signResponse.xml, false, false)
+
+        then: 'signature is valid'
+        verifyResponse.valid
+        verifyResponse.signers.size() == 1
+    }
+
     @Unroll("#caseName")
     def "check xml verifying"() {
         given:

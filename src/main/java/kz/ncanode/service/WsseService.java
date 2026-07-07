@@ -1,20 +1,17 @@
 package kz.ncanode.service;
 
 import kz.ncanode.dto.request.WsseSignRequest;
-import kz.ncanode.dto.request.XmlWsseSignRequest;
 import kz.ncanode.dto.response.VerificationResponse;
 import kz.ncanode.dto.response.XmlSignResponse;
 import kz.ncanode.exception.ClientException;
 import kz.ncanode.exception.KeyException;
 import kz.ncanode.exception.ServerException;
 import kz.ncanode.wrapper.CertificateWrapper;
-import kz.ncanode.wrapper.DocumentWrapper;
 import kz.ncanode.wrapper.KalkanWrapper;
 import kz.ncanode.wrapper.KeyStoreWrapper;
 import kz.ncanode.wrapper.XMLSignatureWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import lombok.val;
 import org.apache.ws.security.components.crypto.CertificateStore;
 import org.apache.ws.security.message.token.SecurityTokenReference;
 import org.apache.wss4j.dom.WSConstants;
@@ -123,36 +120,22 @@ public class WsseService {
     }
 
     /**
-     * Подписывает XML сначала EDS-подписью (v3, повторяет пайплайн eds-cmd-example: элемент,
-     * найденный по xpath каждого signer'а, вырезается в отдельный документ, подписывается там
-     * self-reference'ом и вставляется на место), а затем оборачивает результат WSSE-подписью —
-     * так же, как это делает Main.java из eds-cmd-example (sign EDS, затем sign WSSE тем же
-     * ключом). WSSE-часть здесь отличается от {@link #sign(WsseSignRequest)}: у ds:Signature
-     * проставляется свой Id, а у wsse:Security нет атрибута mustUnderstand — как в
-     * eds-cmd-example (KalkanWrapper.signWsse вызывается с mu=false).
+     * Подписывает Wsse XML (v3) — аналог {@link #sign(WsseSignRequest)}, но с двумя отличиями,
+     * чтобы точно повторить KalkanWrapper.signWsse из eds-cmd-example: у ds:Signature
+     * проставляется случайный Id, а у wsse:Security нет атрибута mustUnderstand (используется
+     * 3-аргументный конструктор WSSecHeader с mustUnderstand=false, как в eds-cmd-example, а не
+     * setMustUnderstand(true)).
      *
-     * @param request Запрос на подпись XML (EDS) + WSSE
+     * @param wsseSignRequest Запрос на подпись
      * @return Подписанный SOAP-конверт
      */
-    public XmlSignResponse signEdsThenWsse(final XmlWsseSignRequest request) {
+    public XmlSignResponse signV3(final WsseSignRequest wsseSignRequest) {
         try {
-            final DocumentWrapper document = xmlService.read(request.getXml(), request.isClearSignatures());
-
-            if (request.isTrimXml()) {
-                xmlService.removeWhitespace(document.getDocument());
-            }
-
-            int i = 0;
-
-            for (KeyStoreWrapper keyStore : kalkanWrapper.read(request.getSigners())) {
-                val signerRequest = request.getSigners().get(i++);
-                document.createXmlSignatureExtracted(keyStore.getCertificate(), keyStore.getPrivateKey(), signerRequest.getXpath());
-            }
-
-            final KeyStoreWrapper wsseKeystore = kalkanWrapper.read(request.getWsseKey(), request.getWsseKeyAlias(), request.getWssePassword());
+            final KeyStoreWrapper keystore = kalkanWrapper.read(wsseSignRequest.getKey(), wsseSignRequest.getKeyAlias(), wsseSignRequest.getPassword());
+            final String xml = xmlService.prepare(wsseSignRequest.getXml(), wsseSignRequest.isTrimXml());
 
             return XmlSignResponse.builder()
-                .xml(signWsseEdsCompatible(document.toString(), wsseKeystore))
+                .xml(signWsseEdsCompatible(xml, keystore))
                 .build();
         } catch (KeyException e) {
             throw new ClientException(e.getMessage(), e);
@@ -161,12 +144,6 @@ public class WsseService {
         }
     }
 
-    /**
-     * Аналог основной части {@link #sign(WsseSignRequest)}, но с двумя отличиями, чтобы точно
-     * повторить KalkanWrapper.signWsse из eds-cmd-example: у ds:Signature проставляется случайный
-     * Id, а у wsse:Security нет атрибута mustUnderstand (используется 3-аргументный конструктор
-     * WSSecHeader с mustUnderstand=false, как в eds-cmd-example, а не setMustUnderstand(true)).
-     */
     private String signWsseEdsCompatible(String xml, KeyStoreWrapper keystore) throws Exception {
         final CertificateWrapper cert = keystore.getCertificate();
 

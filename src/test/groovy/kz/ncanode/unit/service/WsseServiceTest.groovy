@@ -6,9 +6,7 @@ import kz.ncanode.dto.crl.CrlResult
 import kz.ncanode.dto.crl.CrlStatus
 import kz.ncanode.dto.ocsp.OcspResult
 import kz.ncanode.dto.ocsp.OcspStatus
-import kz.ncanode.dto.request.SignerRequest
 import kz.ncanode.dto.request.WsseSignRequest
-import kz.ncanode.dto.request.XmlWsseSignRequest
 import kz.ncanode.service.CertificateService
 import kz.ncanode.service.WsseService
 import kz.ncanode.wrapper.CertificateWrapper
@@ -119,70 +117,41 @@ ngGRfppW9X6JHGjv5s7WO7Y+YPB9gqeN71+Huw==
         'sign gost 2015' | XML_VALID_STRING | KEY_INDIVIDUAL_VALID_2015      | KEY_INDIVIDUAL_VALID_2015_PASSWORD
     }
 
-    private final static String DATA_XPATH =
-        "/*[local-name()='Envelope']/*[local-name()='Body']/*[local-name()='SendMessage']/*[local-name()='request']/*[local-name()='requestData']/*[local-name()='data']"
-
     @Unroll('#caseName')
-    def "test signEdsThenWsse produces eds-cmd-example-compatible structure"() {
+    def "test signV3 produces eds-cmd-example-compatible wsse structure"() {
         given:
-        def signer = SignerRequest.builder()
-            .xpath(DATA_XPATH)
+        def wsseSignRequest = WsseSignRequest.builder()
+            .xml(xml)
             .key(key)
             .password(password)
             .build()
-        def request = XmlWsseSignRequest.builder()
-            .xml(XML_VALID_STRING)
-            .signers([signer])
-            .wsseKey(key)
-            .wssePassword(password)
-            .build()
 
         when:
-        def response = wsseService.signEdsThenWsse(request)
+        def response = wsseService.signV3(wsseSignRequest)
         def signed = DOMBuilder.parse(new StringReader(response.xml))
 
         then:
         response != null
         signed != null
 
-        and: 'wsse:Security has no mustUnderstand attribute, like eds-cmd-example'
+        and: 'wsse:Security has no mustUnderstand attribute, unlike /wsse/sign, matching eds-cmd-example'
         def security = signed.getElementsByTagName('wsse:Security').item(0)
         security.attributes.getNamedItem('SOAP-ENV:mustUnderstand') == null
 
-        and: 'there are exactly two signatures: WSSE (outer) and EDS (inside data)'
-        def signatures = signed.getElementsByTagName('ds:Signature')
-        signatures.length == 2
+        and: 'the ds:Signature has its own Id, unlike /wsse/sign, matching eds-cmd-example'
+        def signature = signed.getElementsByTagName('ds:Signature').item(0)
+        def signatureId = signature.attributes.getNamedItem('Id')?.textContent
+        signatureId != null && !signatureId.isEmpty()
 
-        and: 'the outer (WSSE) ds:Signature has its own Id, unlike /wsse/sign'
-        def wsseSignature = signatures.item(0)
-        def wsseSignatureId = wsseSignature.attributes.getNamedItem('Id')?.textContent
-        wsseSignatureId != null && !wsseSignatureId.isEmpty()
-
-        and: 'the inner (EDS) ds:Signature is nested inside data and has its own Id'
-        def dataElement = signed.getElementsByTagName('ns4:data').item(0)
-        dataElement.getElementsByTagName('ds:Signature').length == 1
-        def edsSignature = dataElement.getElementsByTagName('ds:Signature').item(0)
-        def edsSignatureId = edsSignature.attributes.getNamedItem('Id')?.textContent
-        edsSignatureId != null && !edsSignatureId.isEmpty()
-
-        and: 'data got an auto-generated Id, referenced by the EDS ds:Reference'
-        def generatedId = dataElement.attributes.getNamedItem('Id')?.textContent
-        generatedId != null && !generatedId.isEmpty()
-        def edsReference = edsSignature.getElementsByTagName('ds:Reference').item(0)
-        edsReference.attributes.getNamedItem('URI').textContent == ('#' + generatedId)
-
-        and: 'the EDS SignedInfo canonicalization is exclusive, matching eds-cmd-example'
-        def edsCanonicalizationMethod = edsSignature.getElementsByTagName('ds:CanonicalizationMethod').item(0)
-        edsCanonicalizationMethod.attributes.getNamedItem('Algorithm').textContent == 'http://www.w3.org/2001/10/xml-exc-c14n#'
-
-        and: 'the EDS Reference transform is inclusive-with-comments, matching eds-cmd-example'
-        def edsTransform = edsSignature.getElementsByTagName('ds:Transform').item(1)
-        edsTransform.attributes.getNamedItem('Algorithm').textContent == 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments'
+        and: 'the signature value is present'
+        def signatureValues = signed.getElementsByTagName('ds:SignatureValue')
+        signatureValues.length > 0
+        !signatureValues.item(0).textContent.isEmpty()
 
         where:
-        caseName         | key                            | password
-        'sign gost 2004' | KEY_INDIVIDUAL_VALID_SIGN_2004 | KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD
-        'sign gost 2015' | KEY_INDIVIDUAL_VALID_2015      | KEY_INDIVIDUAL_VALID_2015_PASSWORD
+        caseName         | xml              | key                            | password
+        'sign gost 2004' | XML_VALID_STRING | KEY_INDIVIDUAL_VALID_SIGN_2004 | KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD
+        'sign gost 2015' | XML_VALID_STRING | KEY_INDIVIDUAL_VALID_2015      | KEY_INDIVIDUAL_VALID_2015_PASSWORD
     }
 
     @Unroll('#caseName')
