@@ -175,6 +175,7 @@ public class WsseService {
 
         String bodyId = "id-" + UUID.randomUUID();
         body.setAttributeNS(WSConstants.WSU_NS, WSConstants.WSU_PREFIX + ":Id", bodyId);
+        body.setIdAttributeNS(WSConstants.WSU_NS, "Id", true);
 
         Transforms transforms = new Transforms(doc);
         transforms.addTransform(Transforms.TRANSFORM_C14N_EXCL_OMIT_COMMENTS);
