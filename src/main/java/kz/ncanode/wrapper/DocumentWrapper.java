@@ -114,7 +114,8 @@ public class DocumentWrapper {
      * eds-cmd-example's prepareForSign), подписывается там (self-reference, Id генерируется
      * при необходимости, ds:Signature вкладывается внутрь), результат сериализуется в строку
      * и парсится обратно (как и в eds-cmd-example), после чего подписанный элемент вставляется
-     * на место оригинала в исходном документе.
+     * на место оригинала в исходном документе. Алгоритмы канонизации/трансформа — как в
+     * eds-cmd-example (SignedInfo exclusive-no-comments, Reference inclusive-with-comments).
      */
     public void createXmlSignatureExtracted(CertificateWrapper certificateWrapper, PrivateKey privateKey, String xpath) {
         final Element original = resolveInsertionPoint(xpath);

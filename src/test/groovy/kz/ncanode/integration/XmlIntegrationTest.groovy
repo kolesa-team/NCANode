@@ -8,6 +8,7 @@ import kz.ncanode.dto.request.XmlSignRequest
 import kz.ncanode.dto.request.XmlVerifyRequest
 import kz.ncanode.dto.response.VerificationResponse
 import kz.ncanode.dto.response.XmlSignResponse
+import kz.ncanode.service.WsseService
 import kz.ncanode.service.XmlService
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -23,8 +24,11 @@ class XmlIntegrationTest extends IntegrationSpecification {
     @Autowired
     XmlService xmlService
 
+    @Autowired
+    WsseService wsseService
+
     def setup() {
-        configureMockMvc(new XmlController(xmlService))
+        configureMockMvc(new XmlController(xmlService, wsseService))
     }
 
     def "test xml sign"() {

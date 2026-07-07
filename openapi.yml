@@ -172,23 +172,30 @@ paths:
     post:
       tags:
         - XML
-      summary: Подписывает XML ключами переданными в signers, повторяя пайплайн eds-cmd-example (v3)
+      summary: Подписывает XML EDS-подписью, затем оборачивает результат WSSE-подписью — точно повторяя пайплайн eds-cmd-example (v3)
       description: |
-        У каждого signer'а учитывается только поле xpath (остальные поля SignerRequest,
-        специфичные для v2, — referenceUri и exclusive — не используются). Элемент, найденный
-        по xpath, вырезается в отдельный документ, подписывается там (self-reference: если у
-        него нет атрибута Id, он генерируется автоматически; ds:Signature вкладывается внутрь
-        и получает свой собственный Id) и вставляется на место оригинала — так же, как это
-        делает eds-cmd-example, включая используемые алгоритмы канонизации.
+        У каждого signer'а из signers учитывается только поле xpath — элемент, найденный по
+        нему, вырезается в отдельный документ, подписывается там (self-reference: Id
+        генерируется автоматически, если его нет; ds:Signature вкладывается внутрь элемента и
+        получает свой собственный Id) и вставляется на место оригинала. Алгоритмы канонизации —
+        как в eds-cmd-example: ds:CanonicalizationMethod у SignedInfo — exclusive
+        (http://www.w3.org/2001/10/xml-exc-c14n#), трансформ у ds:Reference — inclusive-with-
+        comments (http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments).
+
+        После этого результат оборачивается WSSE-подписью тем же способом, что и /wsse/sign, но
+        с двумя отличиями, чтобы точно повторить eds-cmd-example: у ds:Signature проставляется
+        свой Id, а у wsse:Security нет атрибута mustUnderstand.
       requestBody:
         content:
           application/json:
             schema:
               type: object
-              description: Запрос на подпись XML
+              description: Запрос на подпись XML (EDS) + WSSE
               required:
                 - xml
                 - signers
+                - wsseKey
+                - wssePassword
               properties:
                 xml:
                   type: string
@@ -202,6 +209,12 @@ paths:
                   example: false
                 trimXml:
                   $ref: '#/components/schemas/TrimXML'
+                wsseKey:
+                  $ref: '#/components/schemas/SignerKey'
+                wssePassword:
+                  $ref: '#/components/schemas/SignerPassword'
+                wsseKeyAlias:
+                  $ref: '#/components/schemas/SignerAlias'
       responses:
         200:
           $ref: '#/components/responses/XMLSignResponse'
