@@ -105,6 +105,30 @@ public class XmlService {
             .build();
     }
 
+    /**
+     * Подписывание XML (v3) — повторяет пайплайн eds-cmd-example: у каждого signer'а элемент,
+     * найденный по xpath, вырезается в отдельный документ, подписывается там (self-reference,
+     * exclusive canonicalization) и вставляется на место оригинала.
+     * См. {@code DocumentWrapper.createXmlSignatureExtracted}.
+     *
+     * @param xmlSignRequest Запрос на подпись XML
+     * @return Ответ с подписанным XML
+     */
+    public XmlSignResponse signV3(XmlSignRequest xmlSignRequest) {
+        final DocumentWrapper document = prepareForSigning(xmlSignRequest);
+
+        int i = 0;
+
+        for (KeyStoreWrapper keyStore : kalkanWrapper.read(xmlSignRequest.getSigners())) {
+            val signerRequest = xmlSignRequest.getSigners().get(i++);
+            document.createXmlSignatureExtracted(keyStore.getCertificate(), keyStore.getPrivateKey(), signerRequest.getXpath());
+        }
+
+        return XmlSignResponse.builder()
+            .xml(document.toString())
+            .build();
+    }
+
     private DocumentWrapper prepareForSigning(XmlSignRequest xmlSignRequest) {
         final DocumentWrapper document = read(xmlSignRequest.getXml(), xmlSignRequest.isClearSignatures());
 

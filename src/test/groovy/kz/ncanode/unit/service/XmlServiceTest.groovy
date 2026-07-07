@@ -408,6 +408,78 @@ KR8n3tylbHk=
         verifyResponse.signers.size() == 1
     }
 
+    def "check v3 sign extracts, signs and splices the element back"() {
+        given: 'target element without Id and with whitespace text nodes inside'
+        def signer = SignerRequest.builder()
+            .xpath('/a/b')
+            .key(KEY_INDIVIDUAL_VALID_SIGN_2004)
+            .password(KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD)
+            .build()
+        def xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><a><b>\n  <c>test</c>\n</b></a>"
+        def request = XmlSignRequest.builder().xml(xml).signers([signer]).build()
+
+        when: 'sign v3'
+        def signResponse = xmlService.signV3(request)
+
+        then: 'no exception'
+        noExceptionThrown()
+        signResponse != null
+
+        and: 'the signed <b> replaced the original one-for-one, <a> still has a single child'
+        def signed = DOMBuilder.parse(new StringReader(signResponse.xml))
+        signed.documentElement.getChildNodes().getLength() == 1
+        def bElement = signed.documentElement.getElementsByTagName('b').item(0)
+        bElement.getElementsByTagName('ds:Signature').getLength() == 1
+
+        and: 'the target element got an auto-generated Id, referenced by ds:Reference'
+        def generatedId = bElement.attributes.getNamedItem('Id')?.textContent
+        generatedId != null && !generatedId.isEmpty()
+        def reference = bElement.getElementsByTagName('ds:Reference').item(0)
+        reference.attributes.getNamedItem('URI').textContent == ('#' + generatedId)
+
+        and: 'ds:Signature itself has its own Id'
+        def signatureElement = bElement.getElementsByTagName('ds:Signature').item(0)
+        def signatureId = signatureElement.attributes.getNamedItem('Id')?.textContent
+        signatureId != null && !signatureId.isEmpty()
+
+        and: 'the reference transform is exclusive c14n, not inclusive, unlike eds-cmd-example'
+        def c14nTransform = bElement.getElementsByTagName('ds:Transform').item(1)
+        c14nTransform.attributes.getNamedItem('Algorithm').textContent == 'http://www.w3.org/2001/10/xml-exc-c14n#WithComments'
+
+        when: 'verify the produced signature'
+        when(certificateService.getCurrentDate()).thenReturn(buildValidDate())
+        when(certificateService.attachValidationData(any(), anyBoolean(), anyBoolean()))
+            .thenAnswer(new CertificateServiceAnswer(mockIssuerCertificate(true), OcspResult.ACTIVE, CrlResult.ACTIVE))
+        def verifyResponse = xmlService.verify(signResponse.xml, false, false)
+
+        then: 'signature is valid'
+        verifyResponse.valid
+        verifyResponse.signers.size() == 1
+    }
+
+    def "check v3 sign survives being wrapped in another document later"() {
+        given: 'sign via v3'
+        def signer = SignerRequest.builder()
+            .xpath('/a/b')
+            .key(KEY_INDIVIDUAL_VALID_SIGN_2004)
+            .password(KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD)
+            .build()
+        def request = XmlSignRequest.builder().xml(XML_VALID_STRING_WITHOUT_ID_ELEMENT()).signers([signer]).build()
+        def signResponse = xmlService.signV3(request)
+
+        when: 'the signed document is later wrapped in another element declaring a brand-new ancestor namespace (e.g. WSSE-style wrapping)'
+        def wrappedXml = "<wrapper xmlns:extra=\"urn:extra:added-later\">" +
+            signResponse.xml.replaceFirst('<\\?xml[^>]*\\?>', '') +
+            "</wrapper>"
+        when(certificateService.getCurrentDate()).thenReturn(buildValidDate())
+        when(certificateService.attachValidationData(any(), anyBoolean(), anyBoolean()))
+            .thenAnswer(new CertificateServiceAnswer(mockIssuerCertificate(true), OcspResult.ACTIVE, CrlResult.ACTIVE))
+        def verifyResponse = xmlService.verify(wrappedXml, false, false)
+
+        then: 'signature is still valid because the reference uses exclusive c14n'
+        verifyResponse.valid
+    }
+
     @Unroll("#caseName")
     def "check xml verifying"() {
         given:

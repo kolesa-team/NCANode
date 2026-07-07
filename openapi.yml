@@ -168,6 +168,46 @@ paths:
         200:
           $ref: '#/components/responses/XMLSignResponse'
 
+  /xml/v3/sign:
+    post:
+      tags:
+        - XML
+      summary: Подписывает XML ключами переданными в signers, повторяя пайплайн eds-cmd-example (v3)
+      description: |
+        У каждого signer'а учитывается только поле xpath (остальные поля SignerRequest,
+        специфичные для v2, — referenceUri и exclusive — не используются). Элемент, найденный
+        по xpath, вырезается в отдельный документ, подписывается там (self-reference: если у
+        него нет атрибута Id, он генерируется автоматически; ds:Signature вкладывается внутрь
+        и получает свой собственный Id) и вставляется на место оригинала — так же, как это
+        делает eds-cmd-example. В отличие от eds-cmd-example, трансформ канонизации у
+        ds:Reference — exclusive, а не inclusive, чтобы подпись не ломалась при последующем
+        оборачивании документа (например, в WSSE).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Запрос на подпись XML
+              required:
+                - xml
+                - signers
+              properties:
+                xml:
+                  type: string
+                  example: '<?xml version=\"1.0\" encoding=\"utf-8\"?><a><b>test</b></a>'
+                  description: XML Строка для подписи
+                signers:
+                  $ref: '#/components/schemas/Signers'
+                clearSignatures:
+                  type: boolean
+                  description: Если true, то удалить прошлы подписи и добавить новые.
+                  example: false
+                trimXml:
+                  $ref: '#/components/schemas/TrimXML'
+      responses:
+        200:
+          $ref: '#/components/responses/XMLSignResponse'
+
   /xml/verify:
     post:
       tags:

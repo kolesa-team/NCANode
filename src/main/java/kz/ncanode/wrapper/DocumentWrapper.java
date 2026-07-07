@@ -15,6 +15,9 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
+import org.w3c.dom.traversal.DocumentTraversal;
+import org.w3c.dom.traversal.NodeFilter;
+import org.w3c.dom.traversal.NodeIterator;
 import org.xml.sax.SAXException;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -32,6 +35,9 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.security.PrivateKey;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -105,6 +111,58 @@ public class DocumentWrapper {
         final String referenceC14nAlgorithm = exclusive ? Transforms.TRANSFORM_C14N_EXCL_WITH_COMMENTS : XMLCipherParameters.N14C_XML_CMMNTS;
 
         return signReference(sig, certificateWrapper, effectiveReferenceUri, referenceC14nAlgorithm);
+    }
+
+    /**
+     * Повторяет пайплайн подписи из eds-cmd-example: элемент, найденный по xpath, вырезается
+     * в отдельный Document (после удаления пробельных text-node внутри него, как в
+     * eds-cmd-example's prepareForSign), подписывается там (self-reference, Id генерируется
+     * при необходимости, ds:Signature вкладывается внутрь), результат сериализуется в строку
+     * и парсится обратно (как и в eds-cmd-example), после чего подписанный элемент вставляется
+     * на место оригинала в исходном документе.
+     * В отличие от eds-cmd-example, трансформ канонизации у ds:Reference — exclusive (а не
+     * inclusive), чтобы подпись не ломалась, если документ впоследствии будет обёрнут во что-то
+     * ещё (например, в WSSE) — обёртывание может добавить новые namespace-декларации на
+     * предках, которые inclusive c14n обязан подтягивать при пересчёте дайджеста.
+     */
+    public void createXmlSignatureExtracted(CertificateWrapper certificateWrapper, PrivateKey privateKey, String xpath) {
+        final Element original = resolveInsertionPoint(xpath);
+        stripWhitespace(original);
+
+        try {
+            final DocumentBuilderFactory documentBuilderFactory = DocumentBuilderFactory.newInstance();
+            documentBuilderFactory.setNamespaceAware(true);
+
+            final Document standaloneDocument = documentBuilderFactory.newDocumentBuilder().newDocument();
+            standaloneDocument.appendChild(standaloneDocument.importNode(original, true));
+
+            final DocumentWrapper standaloneWrapper = new DocumentWrapper(standaloneDocument);
+            standaloneWrapper.createXmlSignatureAtXPath(certificateWrapper, null, null, true).sign(privateKey);
+
+            final DocumentWrapper reparsedWrapper = new DocumentWrapper(standaloneWrapper.toString());
+            final Node importedSigned = getDocument().importNode(reparsedWrapper.getDocumentElement(), true);
+
+            original.getParentNode().replaceChild(importedSigned, original);
+        } catch (ParserConfigurationException e) {
+            log.error("XML generation error", e);
+            throw new ServerException("XML generation error", e);
+        }
+    }
+
+    private void stripWhitespace(Element element) {
+        final DocumentTraversal traversal = (DocumentTraversal) getDocument();
+        final NodeIterator it = traversal.createNodeIterator(element, NodeFilter.SHOW_TEXT, null, true);
+        final List<Node> toRemove = new ArrayList<>();
+
+        for (Node n = it.nextNode(); n != null; n = it.nextNode()) {
+            if (n.getNodeValue().trim().isEmpty()) {
+                toRemove.add(n);
+            }
+        }
+
+        for (Node n : toRemove) {
+            n.getParentNode().removeChild(n);
+        }
     }
 
     /**
