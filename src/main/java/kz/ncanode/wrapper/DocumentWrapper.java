@@ -90,12 +90,9 @@ public class DocumentWrapper {
      * отсчёта (self-reference, как в eds-cmd-example): если у него нет атрибута Id, он
      * генерируется (UUID), и Reference URI выставляется как "#" + этот Id.
      * ds:Signature получает собственный случайный Id.
-     * Если exclusive true, для ds:CanonicalizationMethod у SignedInfo, а также для
-     * трансформа канонизации у самой ds:Reference используется exclusive canonicalization
-     * вместо inclusive. Это важно, если подписанный элемент впоследствии будет вложен в
-     * другой документ (например, обёрнут в WSSE) — оборачивание может добавить новые
-     * namespace-декларации на предках, а inclusive c14n обязан их подтягивать при
-     * пересчёте дайджеста, из-за чего подпись сломается; exclusive c14n от этого не зависит.
+     * Если exclusive true, для ds:CanonicalizationMethod у SignedInfo используется exclusive
+     * canonicalization вместо inclusive. Трансформ канонизации у самой ds:Reference не зависит
+     * от этого флага и всегда inclusive-with-comments (как в /xml/sign и в eds-cmd-example).
      * @return XML Signature Wrapper
      */
     public XMLSignatureWrapper createXmlSignatureAtXPath(CertificateWrapper certificateWrapper, String referenceUri, String xpath, boolean exclusive) {
@@ -108,9 +105,7 @@ public class DocumentWrapper {
         sig.getXmlSignature().setId(UUID.randomUUID().toString());
         insertionPoint.appendChild(sig.getXmlSignature().getElement());
 
-        final String referenceC14nAlgorithm = exclusive ? Transforms.TRANSFORM_C14N_EXCL_WITH_COMMENTS : XMLCipherParameters.N14C_XML_CMMNTS;
-
-        return signReference(sig, certificateWrapper, effectiveReferenceUri, referenceC14nAlgorithm);
+        return signReference(sig, certificateWrapper, effectiveReferenceUri, XMLCipherParameters.N14C_XML_CMMNTS);
     }
 
     /**
@@ -120,10 +115,6 @@ public class DocumentWrapper {
      * при необходимости, ds:Signature вкладывается внутрь), результат сериализуется в строку
      * и парсится обратно (как и в eds-cmd-example), после чего подписанный элемент вставляется
      * на место оригинала в исходном документе.
-     * В отличие от eds-cmd-example, трансформ канонизации у ds:Reference — exclusive (а не
-     * inclusive), чтобы подпись не ломалась, если документ впоследствии будет обёрнут во что-то
-     * ещё (например, в WSSE) — обёртывание может добавить новые namespace-декларации на
-     * предках, которые inclusive c14n обязан подтягивать при пересчёте дайджеста.
      */
     public void createXmlSignatureExtracted(CertificateWrapper certificateWrapper, PrivateKey privateKey, String xpath) {
         final Element original = resolveInsertionPoint(xpath);

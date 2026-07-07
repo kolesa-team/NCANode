@@ -334,7 +334,34 @@ KR8n3tylbHk=
     }
 
     @Unroll("#caseName")
-    def "check v2 sign robustness to being wrapped in another document later"() {
+    def "check v2 sign reference transform is inclusive regardless of exclusive flag"() {
+        given: 'sign with the given exclusive flag'
+        def signer = SignerRequest.builder()
+            .referenceUri('#' + REFERENCE_URI)
+            .xpath('/a/b')
+            .exclusive(exclusive)
+            .key(KEY_INDIVIDUAL_VALID_SIGN_2004)
+            .password(KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD)
+            .build()
+        def request = XmlSignRequest.builder().xml(XML_VALID_STRING_WITH_ID_ELEMENT()).signers([signer]).build()
+
+        when: 'sign v2'
+        def signResponse = xmlService.signV2(request)
+
+        then: 'the ds:Reference transform is always inclusive-with-comments, like in /xml/sign, regardless of exclusive'
+        def signed = DOMBuilder.parse(new StringReader(signResponse.xml))
+        def bElement = signed.documentElement.getElementsByTagName('b').item(0)
+        def c14nTransform = bElement.getElementsByTagName('ds:Transform').item(1)
+        c14nTransform.attributes.getNamedItem('Algorithm').textContent == 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments'
+
+        where:
+        caseName                                   | exclusive
+        'exclusive=false, reference still inclusive' | false
+        'exclusive=true, reference still inclusive'  | true
+    }
+
+    @Unroll("#caseName")
+    def "check v2 sign does not survive being wrapped in another document later (inclusive reference transform)"() {
         given: 'sign with the given exclusive flag'
         def signer = SignerRequest.builder()
             .referenceUri('#' + REFERENCE_URI)
@@ -355,13 +382,13 @@ KR8n3tylbHk=
             .thenAnswer(new CertificateServiceAnswer(mockIssuerCertificate(true), OcspResult.ACTIVE, CrlResult.ACTIVE))
         def verifyResponse = xmlService.verify(wrappedXml, false, false)
 
-        then: 'exclusive c14n stays valid after wrapping, inclusive c14n does not'
-        verifyResponse.valid == expectedValidAfterWrapping
+        then: 'the reference transform is inclusive, so wrapping breaks verification regardless of exclusive'
+        !verifyResponse.valid
 
         where:
-        caseName                          | exclusive || expectedValidAfterWrapping
-        'inclusive breaks after wrapping' | false     || false
-        'exclusive survives wrapping'     | true      || true
+        caseName          | exclusive
+        'exclusive=false' | false
+        'exclusive=true'  | true
     }
 
     def "check v2 sign self-reference when referenceUri is not set"() {
@@ -442,9 +469,9 @@ KR8n3tylbHk=
         def signatureId = signatureElement.attributes.getNamedItem('Id')?.textContent
         signatureId != null && !signatureId.isEmpty()
 
-        and: 'the reference transform is exclusive c14n, not inclusive, unlike eds-cmd-example'
+        and: 'the reference transform is inclusive-with-comments, same as eds-cmd-example'
         def c14nTransform = bElement.getElementsByTagName('ds:Transform').item(1)
-        c14nTransform.attributes.getNamedItem('Algorithm').textContent == 'http://www.w3.org/2001/10/xml-exc-c14n#WithComments'
+        c14nTransform.attributes.getNamedItem('Algorithm').textContent == 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments'
 
         when: 'verify the produced signature'
         when(certificateService.getCurrentDate()).thenReturn(buildValidDate())
@@ -457,7 +484,7 @@ KR8n3tylbHk=
         verifyResponse.signers.size() == 1
     }
 
-    def "check v3 sign survives being wrapped in another document later"() {
+    def "check v3 sign does not survive being wrapped in another document later (inclusive reference transform, matching eds-cmd-example)"() {
         given: 'sign via v3'
         def signer = SignerRequest.builder()
             .xpath('/a/b')
@@ -476,8 +503,8 @@ KR8n3tylbHk=
             .thenAnswer(new CertificateServiceAnswer(mockIssuerCertificate(true), OcspResult.ACTIVE, CrlResult.ACTIVE))
         def verifyResponse = xmlService.verify(wrappedXml, false, false)
 
-        then: 'signature is still valid because the reference uses exclusive c14n'
-        verifyResponse.valid
+        then: 'the reference transform is inclusive, so wrapping breaks verification, same as eds-cmd-example would'
+        !verifyResponse.valid
     }
 
     @Unroll("#caseName")
