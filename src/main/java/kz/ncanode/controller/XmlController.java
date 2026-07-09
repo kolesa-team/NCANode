@@ -31,11 +31,6 @@ public class XmlController {
         return ResponseEntity.ok(xmlService.signV2(xmlSignRequest));
     }
 
-    @PostMapping("/v3/sign")
-    public ResponseEntity<XmlSignResponse> signV3(@Valid @RequestBody XmlSignRequest xmlSignRequest) {
-        return ResponseEntity.ok(xmlService.signV3(xmlSignRequest));
-    }
-
     @PostMapping("/verify")
     public ResponseEntity<VerificationResponse> verify(@Valid @RequestBody XmlVerifyRequest xmlVerifyRequest) {
         return ResponseEntity.ok(xmlService.verify(xmlVerifyRequest.getXml(),

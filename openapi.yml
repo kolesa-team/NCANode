@@ -133,50 +133,10 @@ paths:
     post:
       tags:
         - XML
-      summary: Подписывает XML ключами переданными в signers используя XMLDSig (v2)
+      summary: Подписывает XML EDS-подписью, точно повторяя пайплайн eds-cmd-example (v2)
       description: |
-        В отличие от /xml/sign, этот метод учитывает у каждого signer'а поля xpath,
-        referenceUri и exclusive: если xpath задан, узел ds:Signature вкладывается внутрь
-        элемента, на который он указывает, вместо конца корневого элемента документа; если
-        referenceUri не задан, этот же элемент становится self-reference — при отсутствии
-        у него атрибута Id он генерируется автоматически; если exclusive true, для
-        ds:CanonicalizationMethod используется exclusive canonicalization вместо алгоритма
-        по умолчанию. Сам узел ds:Signature всегда получает случайно сгенерированный Id.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              description: Запрос на подпись XML
-              required:
-                - xml
-                - signers
-              properties:
-                xml:
-                  type: string
-                  example: '<?xml version=\"1.0\" encoding=\"utf-8\"?><a><b>test</b></a>'
-                  description: XML Строка для подписи
-                signers:
-                  $ref: '#/components/schemas/Signers'
-                clearSignatures:
-                  type: boolean
-                  description: Если true, то удалить прошлы подписи и добавить новые.
-                  example: false
-                trimXml:
-                  $ref: '#/components/schemas/TrimXML'
-      responses:
-        200:
-          $ref: '#/components/responses/XMLSignResponse'
-
-  /xml/v3/sign:
-    post:
-      tags:
-        - XML
-      summary: Подписывает XML EDS-подписью, точно повторяя пайплайн eds-cmd-example (v3)
-      description: |
-        У каждого signer'а из signers учитывается только поле xpath (referenceUri и exclusive,
-        специфичные для v2, не используются) — элемент, найденный по нему, вырезается в
-        отдельный документ, подписывается там (self-reference: Id генерируется автоматически,
+        У каждого signer'а из signers учитывается только поле xpath — элемент, найденный по
+        нему, вырезается в отдельный документ, подписывается там (self-reference: Id генерируется автоматически,
         если его нет; ds:Signature вкладывается внутрь элемента и получает свой собственный Id)
         и вставляется на место оригинала. Алгоритмы канонизации — как в eds-cmd-example:
         ds:CanonicalizationMethod у SignedInfo — exclusive (http://www.w3.org/2001/10/xml-exc-c14n#),
@@ -184,7 +144,7 @@ paths:
         (http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments).
 
         Чтобы дополнительно обернуть результат WSSE-подписью так же, как это делает
-        eds-cmd-example, передай его в /wsse/v3/sign.
+        eds-cmd-example, передай его в /wsse/v2/sign.
       requestBody:
         content:
           application/json:
@@ -255,17 +215,17 @@ paths:
         '200':
           $ref: '#/components/responses/XMLSignResponse'
 
-  /wsse/v3/sign:
+  /wsse/v2/sign:
     post:
       tags:
         - Wsse
-      summary: Подписывает SOAP-конверт WSSE-подписью, точно повторяя пайплайн eds-cmd-example (v3)
+      summary: Подписывает SOAP-конверт WSSE-подписью, точно повторяя пайплайн eds-cmd-example (v2)
       description: |
         Формат запроса такой же, как у /wsse/sign, но результат отличается двумя деталями,
         чтобы точно повторить KalkanWrapper.signWsse из eds-cmd-example: у ds:Signature
         проставляется свой случайный Id, а у wsse:Security нет атрибута mustUnderstand.
 
-        Обычно используется после /xml/v3/sign — сначала подписать данные EDS-подписью, затем
+        Обычно используется после /xml/v2/sign — сначала подписать данные EDS-подписью, затем
         обернуть результат этим методом.
       requestBody:
         description: Запрос на подпись Wsse
@@ -577,29 +537,15 @@ components:
         referenceUri:
           type: string
           description: |
-            URI ссылки на подписываемый элемент (ds:Reference URI), например "#id123".
-            Для /xml/v2/sign необязателен: если не задан, элемент, найденный по xpath, сам
-            становится точкой отсчёта (self-reference) — если у него нет атрибута Id, он
-            генерируется автоматически, и в ds:Reference подставляется "#" + этот Id.
+            Учитывается только методом /xml/sign. URI ссылки на подписываемый элемент
+            (ds:Reference URI), например "#id123". Если не задан, подписывается весь документ.
         xpath:
           type: string
           description: |
-            XPath-выражение, указывающее элемент для подписи. Учитывается методами
-            /xml/v2/sign и /xml/v3/sign.
-            В /xml/v2/sign — куда вложить ds:Signature; если не задано, ds:Signature
-            добавляется в конец корневого элемента документа, как раньше.
-            В /xml/v3/sign — какой элемент вырезать, подписать и вставить обратно; если не
-            задано, будет подписан весь документ.
+            Учитывается только методом /xml/v2/sign. XPath-выражение, указывающее какой
+            элемент вырезать, подписать и вставить обратно; если не задано, будет подписан
+            весь документ.
           example: /Root/Data[1]
-        exclusive:
-          type: boolean
-          description: |
-            Учитывается только методом /xml/v2/sign. Если true, для ds:CanonicalizationMethod
-            у SignedInfo используется exclusive canonicalization
-            (http://www.w3.org/2001/10/xml-exc-c14n#) вместо inclusive по умолчанию. Трансформ
-            канонизации у самой ds:Reference не зависит от этого флага и всегда
-            inclusive-with-comments (как в /xml/sign).
-          default: false
 
     Signers:
       type: array

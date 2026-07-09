@@ -120,14 +120,14 @@ public class WsseService {
     }
 
     /**
-     * Подписывает Wsse XML (v3) — использует те же ключи из signers, что и {@link #sign}, но
+     * Подписывает Wsse XML (v2) — использует те же ключи из signers, что и {@link #sign}, но
      * подпись строится через {@link #signWsseEdsCompatible}, дословно повторяющий
      * KalkanWrapper.signWsse из eds-cmd-example.
      *
      * @param wsseSignRequest Запрос на подпись
      * @return Подписанный SOAP-конверт
      */
-    public XmlSignResponse signV3(final WsseSignRequest wsseSignRequest) {
+    public XmlSignResponse signV2(final WsseSignRequest wsseSignRequest) {
         try {
             final KeyStoreWrapper keystore = kalkanWrapper.read(wsseSignRequest.getKey(), wsseSignRequest.getKeyAlias(), wsseSignRequest.getPassword());
             final String xml = xmlService.prepare(wsseSignRequest.getXml(), wsseSignRequest.isTrimXml());

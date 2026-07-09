@@ -122,7 +122,7 @@ ngGRfppW9X6JHGjv5s7WO7Y+YPB9gqeN71+Huw==
     }
 
     @Unroll('#caseName')
-    def "test signV3 produces eds-cmd-example-compatible wsse structure"() {
+    def "test signV2 produces eds-cmd-example-compatible wsse structure"() {
         given:
         def wsseSignRequest = WsseSignRequest.builder()
             .xml(xml)
@@ -131,7 +131,7 @@ ngGRfppW9X6JHGjv5s7WO7Y+YPB9gqeN71+Huw==
             .build()
 
         when:
-        def response = wsseService.signV3(wsseSignRequest)
+        def response = wsseService.signV2(wsseSignRequest)
         def signed = DOMBuilder.parse(new StringReader(response.xml))
 
         then:
@@ -158,16 +158,16 @@ ngGRfppW9X6JHGjv5s7WO7Y+YPB9gqeN71+Huw==
         'sign gost 2015' | XML_VALID_STRING | KEY_INDIVIDUAL_VALID_2015      | KEY_INDIVIDUAL_VALID_2015_PASSWORD
     }
 
-    def "test signV3 preserves an already-present nested ds:Signature byte-for-byte"() {
-        given: 'xml already contains a nested ds:Signature (e.g. from /xml/v3/sign) with multi-line, CR-wrapped base64 values'
+    def "test signV2 preserves an already-present nested ds:Signature byte-for-byte"() {
+        given: 'xml already contains a nested ds:Signature (e.g. from /xml/v2/sign) with multi-line, CR-wrapped base64 values'
         def wsseSignRequest = WsseSignRequest.builder()
             .xml(XML_WITH_NESTED_EDS_SIGNATURE)
             .key(KEY_INDIVIDUAL_VALID_SIGN_2004)
             .password(KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD)
             .build()
 
-        when: 'sign v3'
-        def response = wsseService.signV3(wsseSignRequest)
+        when: 'sign v2'
+        def response = wsseService.signV2(wsseSignRequest)
 
         then: 'the pre-existing nested DigestValue/SignatureValue text, including internal CR line-wraps, survives byte-for-byte'
         response.xml.contains('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&#13;\nBBBBBBBBBB==')

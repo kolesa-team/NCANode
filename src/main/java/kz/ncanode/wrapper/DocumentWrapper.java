@@ -9,12 +9,9 @@ import org.apache.xml.security.c14n.Canonicalizer;
 import org.apache.xml.security.encryption.XMLCipherParameters;
 import org.apache.xml.security.exceptions.XMLSecurityException;
 import org.apache.xml.security.transforms.Transforms;
-import org.w3c.dom.Attr;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
-import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
 import org.w3c.dom.traversal.DocumentTraversal;
 import org.w3c.dom.traversal.NodeFilter;
 import org.w3c.dom.traversal.NodeIterator;
@@ -81,31 +78,23 @@ public class DocumentWrapper {
     }
 
     /**
-     * Создает и добавляет XMLDSIG подпись внутрь элемента, на который указывает xpath.
-     * Если referenceUri передан явно, ведёт себя как раньше: резолвит его по атрибуту Id
-     * (регистрируя найденный атрибут как ID через DOM, чтобы Apache Santuario мог разрешить
-     * ссылку при вычислении дайджеста без необходимости в DTD/ATTLIST) независимо от того,
-     * куда указывает xpath.
-     * Если referenceUri не передан, элемент, найденный по xpath, сам становится точкой
-     * отсчёта (self-reference, как в eds-cmd-example): если у него нет атрибута Id, он
-     * генерируется (UUID), и Reference URI выставляется как "#" + этот Id.
-     * ds:Signature получает собственный случайный Id.
-     * Если exclusive true, для ds:CanonicalizationMethod у SignedInfo используется exclusive
-     * canonicalization вместо inclusive. Трансформ канонизации у самой ds:Reference не зависит
-     * от этого флага и всегда inclusive-with-comments (как в /xml/sign и в eds-cmd-example).
+     * Создает и добавляет XMLDSIG подпись в корневой элемент документа, self-reference
+     * (как в eds-cmd-example): если у корневого элемента нет атрибута Id, он генерируется
+     * (UUID), и Reference URI выставляется как "#" + этот Id. ds:Signature получает
+     * собственный случайный Id. Для ds:CanonicalizationMethod у SignedInfo используется
+     * exclusive canonicalization. Трансформ канонизации у самой ds:Reference — всегда
+     * inclusive-with-comments (как в /xml/sign и в eds-cmd-example).
      * @return XML Signature Wrapper
      */
-    public XMLSignatureWrapper createXmlSignatureAtXPath(CertificateWrapper certificateWrapper, String referenceUri, String xpath, boolean exclusive) {
-        final Element insertionPoint = resolveInsertionPoint(xpath);
-        final String effectiveReferenceUri = resolveReferenceUri(referenceUri, insertionPoint);
+    private XMLSignatureWrapper createSelfReferencingXmlSignature(CertificateWrapper certificateWrapper) {
+        final Element insertionPoint = getDocumentElement();
+        final String referenceUri = "#" + ensureIdAttribute(insertionPoint);
 
-        final XMLSignatureWrapper sig = exclusive
-            ? new XMLSignatureWrapper(getDocument(), certificateWrapper.getSignAlgorithmId(), Canonicalizer.ALGO_ID_C14N_EXCL_OMIT_COMMENTS)
-            : new XMLSignatureWrapper(getDocument(), certificateWrapper.getSignAlgorithmId());
+        final XMLSignatureWrapper sig = new XMLSignatureWrapper(getDocument(), certificateWrapper.getSignAlgorithmId(), Canonicalizer.ALGO_ID_C14N_EXCL_OMIT_COMMENTS);
         sig.getXmlSignature().setId(UUID.randomUUID().toString());
         insertionPoint.appendChild(sig.getXmlSignature().getElement());
 
-        return signReference(sig, certificateWrapper, effectiveReferenceUri, XMLCipherParameters.N14C_XML_CMMNTS);
+        return signReference(sig, certificateWrapper, referenceUri, XMLCipherParameters.N14C_XML_CMMNTS);
     }
 
     /**
@@ -136,7 +125,7 @@ public class DocumentWrapper {
             extractedDocument.appendChild(extractedDocument.importNode(original, true));
 
             final DocumentWrapper preSignWrapper = new DocumentWrapper(new DocumentWrapper(extractedDocument).toString());
-            preSignWrapper.createXmlSignatureAtXPath(certificateWrapper, null, null, true).sign(privateKey);
+            preSignWrapper.createSelfReferencingXmlSignature(certificateWrapper).sign(privateKey);
 
             final DocumentWrapper signedWrapper = new DocumentWrapper(preSignWrapper.toString());
             final Node importedSigned = getDocument().importNode(signedWrapper.getDocumentElement(), true);
@@ -162,19 +151,6 @@ public class DocumentWrapper {
         for (Node n : toRemove) {
             n.getParentNode().removeChild(n);
         }
-    }
-
-    /**
-     * Если referenceUri передан явно — резолвит его как раньше (по всему документу, по атрибуту Id).
-     * Иначе — self-reference на insertionPoint: генерирует Id, если его нет, и возвращает "#" + Id.
-     */
-    private String resolveReferenceUri(String referenceUri, Element insertionPoint) {
-        if (referenceUri != null && !referenceUri.isBlank()) {
-            registerReferenceIdAttribute(referenceUri);
-            return referenceUri;
-        }
-
-        return "#" + ensureIdAttribute(insertionPoint);
     }
 
     private String ensureIdAttribute(Element element) {
@@ -229,49 +205,6 @@ public class DocumentWrapper {
         }
 
         return (Element) node;
-    }
-
-    /**
-     * Если referenceUri указывает на конкретный элемент (вида "#id"), находит его по атрибуту
-     * Id и регистрирует найденный атрибут как ID через DOM, чтобы Apache Santuario мог
-     * разрешить ссылку "#id" при вычислении дайджеста без необходимости в DTD/ATTLIST.
-     */
-    private void registerReferenceIdAttribute(String referenceUri) {
-        if (referenceUri == null || !referenceUri.startsWith("#") || referenceUri.length() < 2) {
-            return;
-        }
-
-        findElementById(getDocumentElement(), referenceUri.substring(1));
-    }
-
-    private Optional<Element> findElementById(Element element, String id) {
-        NamedNodeMap attributes = element.getAttributes();
-
-        for (int i = 0; i < attributes.getLength(); i++) {
-            Attr attr = (Attr) attributes.item(i);
-            String attrName = attr.getLocalName() != null ? attr.getLocalName() : attr.getName();
-
-            if ("Id".equals(attrName) && id.equals(attr.getValue())) {
-                element.setIdAttributeNode(attr, true);
-                return Optional.of(element);
-            }
-        }
-
-        NodeList children = element.getChildNodes();
-
-        for (int i = 0; i < children.getLength(); i++) {
-            Node child = children.item(i);
-
-            if (child instanceof Element) {
-                Optional<Element> found = findElementById((Element) child, id);
-
-                if (found.isPresent()) {
-                    return found;
-                }
-            }
-        }
-
-        return Optional.empty();
     }
 
     @Override
