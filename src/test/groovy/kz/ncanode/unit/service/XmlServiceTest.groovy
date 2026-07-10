@@ -290,7 +290,7 @@ KR8n3tylbHk=
         references.item(1).attributes.getNamedItem("URI").textContent == ('#' + REFERENCE_URI)
     }
 
-    def "check v2 sign extracts, signs and splices the element back, matching eds-cmd-example"() {
+    def "check v2 sign extracts, signs and splices the element back"() {
         given: 'target element without Id and with whitespace text nodes inside'
         def signer = SignerRequest.builder()
             .xpath('/a/b')
@@ -324,15 +324,15 @@ KR8n3tylbHk=
         def signatureId = signatureElement.attributes.getNamedItem('Id')?.textContent
         signatureId != null && !signatureId.isEmpty()
 
-        and: 'the SignedInfo canonicalization is exclusive, matching eds-cmd-example'
+        and: 'the SignedInfo canonicalization is exclusive'
         def canonicalizationMethod = bElement.getElementsByTagName('ds:CanonicalizationMethod').item(0)
         canonicalizationMethod.attributes.getNamedItem('Algorithm').textContent == 'http://www.w3.org/2001/10/xml-exc-c14n#'
 
-        and: 'the reference transform is inclusive-with-comments, matching eds-cmd-example'
+        and: 'the reference transform is inclusive-with-comments'
         def c14nTransform = bElement.getElementsByTagName('ds:Transform').item(1)
         c14nTransform.attributes.getNamedItem('Algorithm').textContent == 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments'
 
-        when: 'verify the produced signature the same way eds-cmd-example does - isolate the signed element (serialize + reparse standalone) before checking, since the reference transform is inclusive C14N and therefore sensitive to ancestor context'
+        when: 'verify the produced signature by isolating the signed element (serialize + reparse standalone) before checking, since the reference transform is inclusive C14N and therefore sensitive to ancestor context'
         def serializedElement = new StringWriter().with { writer ->
             TransformerFactory.newInstance().newTransformer().transform(new DOMSource(bElement), new StreamResult(writer))
             writer.toString()

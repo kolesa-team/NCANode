@@ -56,10 +56,6 @@ class WsseServiceTest extends Specification implements WithTestData {
 </SOAP-ENV:Envelope>
 """
 
-    private final static String XML_WITH_NESTED_EDS_SIGNATURE = """<?xml version="1.0" encoding="UTF-8"?><SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"><SOAP-ENV:Header/><SOAP-ENV:Body><ns3:SendMessage xmlns:ns3="http://bip.bee.kz/SyncChannel/v10/Types"><data Id="pre-existing-id"><value>test</value><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="pre-existing-sig-id"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><ds:Reference URI="#pre-existing-id"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&#13;
-BBBBBBBBBB==</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC&#13;
-DDDDDDDDDD==</ds:SignatureValue></ds:Signature></data></ns3:SendMessage></SOAP-ENV:Body></SOAP-ENV:Envelope>"""
-
     private final static String XML_SIGNED_STRING = """
 <?xml version="1.0" encoding="UTF-8" standalone="no"?><SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"><SOAP-ENV:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" SOAP-ENV:mustUnderstand="1"><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
 <ds:SignedInfo>
@@ -119,65 +115,6 @@ ngGRfppW9X6JHGjv5s7WO7Y+YPB9gqeN71+Huw==
         caseName         | xml              | key                            | password
         'sign gost 2004' | XML_VALID_STRING | KEY_INDIVIDUAL_VALID_SIGN_2004 | KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD
         'sign gost 2015' | XML_VALID_STRING | KEY_INDIVIDUAL_VALID_2015      | KEY_INDIVIDUAL_VALID_2015_PASSWORD
-    }
-
-    @Unroll('#caseName')
-    def "test signV2 produces eds-cmd-example-compatible wsse structure"() {
-        given:
-        def wsseSignRequest = WsseSignRequest.builder()
-            .xml(xml)
-            .key(key)
-            .password(password)
-            .build()
-
-        when:
-        def response = wsseService.signV2(wsseSignRequest)
-        def signed = DOMBuilder.parse(new StringReader(response.xml))
-
-        then:
-        response != null
-        signed != null
-
-        and: 'wsse:Security has no mustUnderstand attribute, unlike /wsse/sign, matching eds-cmd-example'
-        def security = signed.getElementsByTagName('wsse:Security').item(0)
-        security.attributes.getNamedItem('SOAP-ENV:mustUnderstand') == null
-
-        and: 'the ds:Signature has its own Id, unlike /wsse/sign, matching eds-cmd-example'
-        def signature = signed.getElementsByTagName('ds:Signature').item(0)
-        def signatureId = signature.attributes.getNamedItem('Id')?.textContent
-        signatureId != null && !signatureId.isEmpty()
-
-        and: 'the signature value is present'
-        def signatureValues = signed.getElementsByTagName('ds:SignatureValue')
-        signatureValues.length > 0
-        !signatureValues.item(0).textContent.isEmpty()
-
-        where:
-        caseName         | xml              | key                            | password
-        'sign gost 2004' | XML_VALID_STRING | KEY_INDIVIDUAL_VALID_SIGN_2004 | KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD
-        'sign gost 2015' | XML_VALID_STRING | KEY_INDIVIDUAL_VALID_2015      | KEY_INDIVIDUAL_VALID_2015_PASSWORD
-    }
-
-    def "test signV2 preserves an already-present nested ds:Signature byte-for-byte"() {
-        given: 'xml already contains a nested ds:Signature (e.g. from /xml/v2/sign) with multi-line, CR-wrapped base64 values'
-        def wsseSignRequest = WsseSignRequest.builder()
-            .xml(XML_WITH_NESTED_EDS_SIGNATURE)
-            .key(KEY_INDIVIDUAL_VALID_SIGN_2004)
-            .password(KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD)
-            .build()
-
-        when: 'sign v2'
-        def response = wsseService.signV2(wsseSignRequest)
-
-        then: 'the pre-existing nested DigestValue/SignatureValue text, including internal CR line-wraps, survives byte-for-byte'
-        response.xml.contains('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&#13;\nBBBBBBBBBB==')
-        response.xml.contains('CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC&#13;\nDDDDDDDDDD==')
-
-        and: 'the nested signature is still where it was, inside data'
-        def signed = DOMBuilder.parse(new StringReader(response.xml))
-        def data = signed.getElementsByTagName('data').item(0)
-        data.getElementsByTagName('ds:Signature').getLength() == 1
-        data.getElementsByTagName('ds:Signature').item(0).attributes.getNamedItem('Id').textContent == 'pre-existing-sig-id'
     }
 
     @Unroll('#caseName')

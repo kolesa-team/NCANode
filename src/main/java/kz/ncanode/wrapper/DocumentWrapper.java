@@ -78,12 +78,12 @@ public class DocumentWrapper {
     }
 
     /**
-     * Создает и добавляет XMLDSIG подпись в корневой элемент документа, self-reference
-     * (как в eds-cmd-example): если у корневого элемента нет атрибута Id, он генерируется
+     * Создает и добавляет XMLDSIG подпись в корневой элемент документа,
+     * если у корневого элемента нет атрибута Id, он генерируется
      * (UUID), и Reference URI выставляется как "#" + этот Id. ds:Signature получает
      * собственный случайный Id. Для ds:CanonicalizationMethod у SignedInfo используется
      * exclusive canonicalization. Трансформ канонизации у самой ds:Reference — всегда
-     * inclusive-with-comments (как в /xml/sign и в eds-cmd-example).
+     * inclusive-with-comments
      * @return XML Signature Wrapper
      */
     private XMLSignatureWrapper createSelfReferencingXmlSignature(CertificateWrapper certificateWrapper) {
@@ -98,20 +98,16 @@ public class DocumentWrapper {
     }
 
     /**
-     * Повторяет пайплайн подписи из eds-cmd-example: элемент, найденный по xpath, вырезается
-     * в отдельный Document (после удаления пробельных text-node внутри него, как в
-     * eds-cmd-example's prepareForSign), сериализуется в строку и парсится обратно ДО подписи
-     * (как в eds-cmd-example's nodeToDocument -> documentToString -> re-parse -> signEds) — этот
-     * шаг обязателен: он материализует namespace-декларации, унаследованные от предков в исходном
+     * элемент, найденный по xpath, вырезается в отдельный Document, сериализуется в строку и парсится обратно ДО подписи.
+     * этот шаг обязателен: он материализует namespace-декларации, унаследованные от предков в исходном
      * документе (например xmlns:xsi), на теперь-самостоятельном элементе, поскольку обычный
      * сериализатор обязан объявлять используемые namespace, чтобы фрагмент был well-formed сам по
-     * себе. Без этого шага дайджест считается по другим байтам, чем те, что eds-cmd-example's
-     * validateEds() пересчитывает при проверке (он тоже сериализует+парсит перед сверкой), и
-     * подпись не проходит проверку. Затем элемент подписывается (self-reference, Id генерируется
+     * себе. Без этого шага дайджест считается по другим байтам, и подпись не проходит проверку.
+     * Затем элемент подписывается (self-reference, Id генерируется
      * при необходимости, ds:Signature вкладывается внутрь), результат снова сериализуется в
-     * строку и парсится обратно (как и в eds-cmd-example), после чего подписанный элемент
-     * вставляется на место оригинала в исходном документе. Алгоритмы канонизации/трансформа — как
-     * в eds-cmd-example (SignedInfo exclusive-no-comments, Reference inclusive-with-comments).
+     * строку и парсится обратно, после чего подписанный элемент
+     * вставляется на место оригинала в исходном документе.
+     * Алгоритмы канонизации/трансформа — SignedInfo exclusive-no-comments, Reference inclusive-with-comments.
      */
     public void createXmlSignatureExtracted(CertificateWrapper certificateWrapper, PrivateKey privateKey, String xpath) {
         final Element original = resolveInsertionPoint(xpath);

@@ -27,11 +27,6 @@ public class WsseController {
         return ResponseEntity.ok(wsseService.sign(wsseSignRequest));
     }
 
-    @PostMapping("/v2/sign")
-    public ResponseEntity<XmlSignResponse> signV2(@Valid @RequestBody WsseSignRequest wsseSignRequest) {
-        return ResponseEntity.ok(wsseService.signV2(wsseSignRequest));
-    }
-
     @PostMapping("/verify")
     public ResponseEntity<VerificationResponse> verify(@Valid @RequestBody XmlVerifyRequest xmlVerifyRequest) {
         return ResponseEntity.ok(wsseService.verify(xmlVerifyRequest.getXml(),
