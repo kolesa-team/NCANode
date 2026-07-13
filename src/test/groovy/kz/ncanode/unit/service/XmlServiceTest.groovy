@@ -12,7 +12,6 @@ import kz.ncanode.exception.ServerException
 import kz.ncanode.service.CertificateService
 import kz.ncanode.service.XmlService
 import kz.ncanode.wrapper.CertificateWrapper
-import kz.ncanode.wrapper.XMLSignatureWrapper
 import org.mockito.invocation.InvocationOnMock
 import org.mockito.stubbing.Answer
 import org.springframework.beans.factory.annotation.Autowired
@@ -21,11 +20,6 @@ import org.springframework.boot.test.mock.mockito.MockBean
 import org.w3c.dom.Document
 import spock.lang.Specification
 import spock.lang.Unroll
-
-import javax.xml.parsers.DocumentBuilderFactory
-import javax.xml.transform.TransformerFactory
-import javax.xml.transform.dom.DOMSource
-import javax.xml.transform.stream.StreamResult
 
 import static kz.ncanode.common.SignerRequestTestData.*
 import static org.mockito.Mockito.*
@@ -332,20 +326,62 @@ KR8n3tylbHk=
         def c14nTransform = bElement.getElementsByTagName('ds:Transform').item(1)
         c14nTransform.attributes.getNamedItem('Algorithm').textContent == 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments'
 
-        when: 'verify the produced signature by isolating the signed element (serialize + reparse standalone) before checking, since the reference transform is inclusive C14N and therefore sensitive to ancestor context'
-        def serializedElement = new StringWriter().with { writer ->
-            TransformerFactory.newInstance().newTransformer().transform(new DOMSource(bElement), new StreamResult(writer))
-            writer.toString()
-        }
-        def isolatedElement = DocumentBuilderFactory.newInstance().tap { setNamespaceAware(true) }
-            .newDocumentBuilder()
-            .parse(new ByteArrayInputStream(serializedElement.getBytes('UTF-8')))
-            .documentElement
-        isolatedElement.setIdAttributeNode(isolatedElement.getAttributeNode('Id'), true)
-        def isolatedSignature = isolatedElement.getElementsByTagName('ds:Signature').item(0)
+        when: 'verify the produced signature via /xml/v2/verify, which extracts the signed element into a standalone document the same way the signing pipeline does'
+        def validDate = buildValidDate()
+        def issuerCert = mockIssuerCertificate(true)
+        when(certificateService.getCurrentDate()).thenReturn(validDate)
+        when(certificateService.attachValidationData(any(), anyBoolean(), anyBoolean()))
+            .thenAnswer(new CertificateServiceAnswer(issuerCert, OcspResult.ACTIVE, CrlResult.ACTIVE))
+        def verifyResponse = xmlService.verifyV2(signResponse.xml, false, false)
 
-        then: 'signature is cryptographically valid'
-        new XMLSignatureWrapper(isolatedSignature).check()
+        then: 'signature is valid'
+        verifyResponse.valid
+        verifyResponse.signers.size() == 1
+    }
+
+    def "check v2 verify returns invalid for xml without signatures"() {
+        when: 'verify v2 of a document with no ds:Signature'
+        def verifyResponse = xmlService.verifyV2(XML_VALID_STRING, false, false)
+
+        then: 'not valid and no signers'
+        !verifyResponse.valid
+        verifyResponse.signers.isEmpty()
+    }
+
+    def "check clearSignatures removes all nested signatures without error"() {
+        given: 'two ds:Signature nodes, each nested inside a non-root element (as /xml/v2/sign produces)'
+        def sig = '<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo>x</ds:SignedInfo></ds:Signature>'
+        def xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><a><b>${sig}</b><c>${sig}</c></a>"
+
+        when: 'read with removeSignatures=true'
+        def document = xmlService.read(xml, true)
+
+        then: 'no exception (removeChild used to fail on signatures that are not direct children of the root)'
+        noExceptionThrown()
+
+        and: 'both signatures removed (the old loop over a live NodeList skipped every other one)'
+        document.getDocumentElement().getElementsByTagName('ds:Signature').getLength() == 0
+    }
+
+    def "check v2 sign preserves whitespace inside a pre-existing nested signature"() {
+        given: 'target <b> already holds a ds:Signature whose SignedInfo is formatted with newlines'
+        def preSig = '<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="old">\n<ds:SignedInfo>\n<ds:X>y</ds:X>\n</ds:SignedInfo>\n</ds:Signature>'
+        def xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><a><b>${preSig}</b></a>"
+        def signer = SignerRequest.builder()
+            .xpath('/a/b')
+            .key(KEY_INDIVIDUAL_VALID_SIGN_2004)
+            .password(KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD)
+            .build()
+        def request = XmlSignRequest.builder().xml(xml).signers([signer]).build()
+
+        when: 'sign v2 (which strips whitespace from the target before signing)'
+        def signResponse = xmlService.signV2(request)
+
+        then: 'no exception'
+        noExceptionThrown()
+
+        and: 'the pre-existing signature kept its internal newline formatting, so its canonical form is intact'
+        signResponse.xml.contains('<ds:SignedInfo>\n<ds:X>y</ds:X>\n</ds:SignedInfo>')
     }
 
     @Unroll("#caseName")

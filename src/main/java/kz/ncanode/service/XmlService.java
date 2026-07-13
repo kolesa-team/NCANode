@@ -43,11 +43,19 @@ public class XmlService {
         final DocumentWrapper document = new DocumentWrapper(xml);
 
         if (removeSignatures) {
-            final Element root = document.getDocumentElement();
-            final NodeList signatures = root.getElementsByTagName("ds:Signature");
+            final NodeList signatures = document.getDocumentElement().getElementsByTagName("ds:Signature");
 
-            for (int i=0; i< signatures.getLength(); ++i) {
-                root.removeChild(signatures.item(i));
+            // снимок в статический список: getElementsByTagName возвращает живой NodeList,
+            // удаление по индексу из него пропускало бы элементы
+            final List<Node> toRemove = new ArrayList<>();
+            for (int i = 0; i < signatures.getLength(); ++i) {
+                toRemove.add(signatures.item(i));
+            }
+
+            // удаляем через фактического родителя: ds:Signature может быть вложенной (например
+            // созданной /xml/v2/sign), а не прямым потомком корня
+            for (Node signature : toRemove) {
+                signature.getParentNode().removeChild(signature);
             }
         }
 
@@ -159,6 +167,51 @@ public class XmlService {
 
         if (signaturesLength < 1) {
             valid = false;
+        }
+
+        return VerificationResponse.builder()
+            .valid(valid)
+            .signers(certs.stream().map(c -> c.toCertificateInfo(currentDate, checkOcsp, checkCrl)).toList())
+            .build();
+    }
+
+    /**
+     * Проверяет XML-подписи, созданные методом {@link #signV2(XmlSignRequest)}. В отличие от
+     * {@link #verify(String, boolean, boolean)}, каждая подпись проверяется не "на месте":
+     * элемент, внутри которого лежит ds:Signature, извлекается в отдельный документ (сериализуется
+     * и парсится заново, как при подписи в v2), и только потом проверяется. Это необходимо, потому
+     * что ds:Reference в v2 использует inclusive canonicalization и чувствителен к
+     * namespace-контексту предков — проверка "на месте" дала бы ложный digest mismatch.
+     *
+     * @param xml XML-строка
+     * @param checkOcsp Проверять в OCSP
+     * @param checkCrl Проверять в CRL
+     * @return Результат проверки
+     */
+    public VerificationResponse verifyV2(String xml, boolean checkOcsp, boolean checkCrl) {
+        final DocumentWrapper document = read(xml, false);
+        final List<XMLSignatureWrapper> signatures = document.signaturesForVerification();
+
+        boolean valid = !signatures.isEmpty();
+
+        final ArrayList<CertificateWrapper> certs = new ArrayList<>();
+        final Date currentDate = certificateService.getCurrentDate();
+
+        for (XMLSignatureWrapper signature : signatures) {
+            final CertificateWrapper cert = signature.getCertificate().orElse(null);
+
+            if (cert == null) {
+                valid = false;
+                continue;
+            }
+
+            certificateService.attachValidationData(cert, checkOcsp, checkCrl);
+
+            if (!signature.check() || !cert.isValid(currentDate, checkOcsp, checkCrl)) {
+                valid = false;
+            }
+
+            certs.add(cert);
         }
 
         return VerificationResponse.builder()

@@ -179,6 +179,26 @@ paths:
         '200':
           $ref: '#/components/responses/VerificationResponse'
 
+  /xml/v2/verify:
+    post:
+      tags:
+        - XML
+      summary: Проверяет подписи, созданные методом /xml/v2/sign
+      description: |
+        Проверяет XMLDSig-подписи в формате /xml/v2/sign. В отличие от /xml/verify, каждая
+        подпись проверяется не "на месте", а в изоляции: элемент, внутри которого лежит
+        ds:Signature, сериализуется отдельно и парсится заново — тем же способом, что и при
+        подписи. Это обязательно, потому что ds:Reference в v2 использует inclusive
+        canonicalization и чувствителен к namespace-декларациям предков; проверка "на месте"
+        (как в /xml/verify) дала бы ложный отрицательный результат для v2-подписей. xpath
+        передавать не нужно — подписанные элементы определяются автоматически по расположению
+        ds:Signature.
+      requestBody:
+        $ref: '#/components/requestBodies/XMLVerifyRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/VerificationResponse'
+
   ### WSSE ###
   /wsse/sign:
     post:
@@ -502,9 +522,11 @@ components:
           type: string
           description: |
             Учитывается только методом /xml/v2/sign. XPath-выражение, указывающее какой
-            элемент вырезать, подписать и вставить обратно; если не задано, будет подписан
-            весь документ.
-          example: /Root/Data[1]
+            элемент вырезать, подписать и вставить обратно.
+            Namespace-префиксы не поддерживаются — используйте форму через local-name().
+            Если выражение совпадает с несколькими элементами, подписывается первый в порядке
+            документа. Если не задано, подписывается корневой элемент документа целиком.
+          example: "/*[local-name()='Envelope']/*[local-name()='Body']/*[local-name()='data']"
 
     Signers:
       type: array

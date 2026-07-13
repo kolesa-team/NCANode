@@ -38,4 +38,12 @@ public class XmlController {
             xmlVerifyRequest.getRevocationCheck().contains(CertificateRevocation.CRL)
         ));
     }
+
+    @PostMapping("/v2/verify")
+    public ResponseEntity<VerificationResponse> verifyV2(@Valid @RequestBody XmlVerifyRequest xmlVerifyRequest) {
+        return ResponseEntity.ok(xmlService.verifyV2(xmlVerifyRequest.getXml(),
+            xmlVerifyRequest.getRevocationCheck().contains(CertificateRevocation.OCSP),
+            xmlVerifyRequest.getRevocationCheck().contains(CertificateRevocation.CRL)
+        ));
+    }
 }
