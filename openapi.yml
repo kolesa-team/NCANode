@@ -126,7 +126,7 @@ paths:
                 trimXml:
                   $ref: '#/components/schemas/TrimXML'
       responses:
-        200:
+        '200':
           $ref: '#/components/responses/XMLSignResponse'
 
   /xml/v2/sign:
@@ -165,7 +165,7 @@ paths:
                 trimXml:
                   $ref: '#/components/schemas/TrimXML'
       responses:
-        200:
+        '200':
           $ref: '#/components/responses/XMLSignResponse'
 
   /xml/verify:
