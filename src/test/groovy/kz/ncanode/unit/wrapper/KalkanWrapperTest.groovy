@@ -129,7 +129,7 @@ class KalkanWrapperTest extends Specification implements WithTestData {
         given:
         def kalkanWrapperSpy = spy(kalkanWrapper)
         doThrow(KeyException).when(kalkanWrapperSpy).read(anyString(), any(), anyString())
-        List<SignerRequest> signers = [new SignerRequest(KEY_INDIVIDUAL_VALID_2015, KEY_INDIVIDUAL_VALID_2015_PASSWORD, null, null)]
+        List<SignerRequest> signers = [SignerRequest.builder().key(KEY_INDIVIDUAL_VALID_2015).password(KEY_INDIVIDUAL_VALID_2015_PASSWORD).build()]
 
         when:
         kalkanWrapperSpy.read(signers)

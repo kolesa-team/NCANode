@@ -26,9 +26,22 @@ public class XmlController {
         return ResponseEntity.ok(xmlService.sign(xmlSignRequest));
     }
 
+    @PostMapping("/v2/sign")
+    public ResponseEntity<XmlSignResponse> signV2(@Valid @RequestBody XmlSignRequest xmlSignRequest) {
+        return ResponseEntity.ok(xmlService.signV2(xmlSignRequest));
+    }
+
     @PostMapping("/verify")
     public ResponseEntity<VerificationResponse> verify(@Valid @RequestBody XmlVerifyRequest xmlVerifyRequest) {
         return ResponseEntity.ok(xmlService.verify(xmlVerifyRequest.getXml(),
+            xmlVerifyRequest.getRevocationCheck().contains(CertificateRevocation.OCSP),
+            xmlVerifyRequest.getRevocationCheck().contains(CertificateRevocation.CRL)
+        ));
+    }
+
+    @PostMapping("/v2/verify")
+    public ResponseEntity<VerificationResponse> verifyV2(@Valid @RequestBody XmlVerifyRequest xmlVerifyRequest) {
+        return ResponseEntity.ok(xmlService.verifyV2(xmlVerifyRequest.getXml(),
             xmlVerifyRequest.getRevocationCheck().contains(CertificateRevocation.OCSP),
             xmlVerifyRequest.getRevocationCheck().contains(CertificateRevocation.CRL)
         ));

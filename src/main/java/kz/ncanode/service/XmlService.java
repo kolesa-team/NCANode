@@ -43,11 +43,19 @@ public class XmlService {
         final DocumentWrapper document = new DocumentWrapper(xml);
 
         if (removeSignatures) {
-            final Element root = document.getDocumentElement();
-            final NodeList signatures = root.getElementsByTagName("ds:Signature");
+            final NodeList signatures = document.getDocumentElement().getElementsByTagName("ds:Signature");
 
-            for (int i=0; i< signatures.getLength(); ++i) {
-                root.removeChild(signatures.item(i));
+            // снимок в статический список: getElementsByTagName возвращает живой NodeList,
+            // удаление по индексу из него пропускало бы элементы
+            final List<Node> toRemove = new ArrayList<>();
+            for (int i = 0; i < signatures.getLength(); ++i) {
+                toRemove.add(signatures.item(i));
+            }
+
+            // удаляем через фактического родителя: ds:Signature может быть вложенной (например
+            // созданной /xml/v2/sign), а не прямым потомком корня
+            for (Node signature : toRemove) {
+                signature.getParentNode().removeChild(signature);
             }
         }
 
@@ -61,22 +69,53 @@ public class XmlService {
      * @return Ответ с подписанным XML
      */
     public XmlSignResponse sign(XmlSignRequest xmlSignRequest) {
-        final DocumentWrapper document = read(xmlSignRequest.getXml(), xmlSignRequest.isClearSignatures());
-
-        if (xmlSignRequest.isTrimXml()) {
-            removeWhitespace(document.getDocument());
-        }
+        final DocumentWrapper document = prepareForSigning(xmlSignRequest);
 
         int i = 0;
 
         for (KeyStoreWrapper keyStore : kalkanWrapper.read(xmlSignRequest.getSigners())) {
-            document.createXmlSignature(keyStore.getCertificate(), xmlSignRequest.getSigners().get(i++).getReferenceUri())
+            val signerRequest = xmlSignRequest.getSigners().get(i++);
+            document.createXmlSignature(keyStore.getCertificate(), signerRequest.getReferenceUri())
                 .sign(keyStore.getPrivateKey());
         }
 
         return XmlSignResponse.builder()
             .xml(document.toString())
             .build();
+    }
+
+    /**
+     * у каждого signer'а элемент, найденный по xpath, вырезается в отдельный документ, подписывается там
+     * (self-reference: Id генерируется автоматически, если его нет; ds:Signature вкладывается
+     * внутрь и получает свой собственный Id) и вставляется на место оригинала.
+     * Алгоритмы — SignedInfo exclusive-no-comments, Reference inclusive-with-comments.
+     *
+     * @param xmlSignRequest Запрос на подпись XML
+     * @return Ответ с подписанным XML
+     */
+    public XmlSignResponse signV2(XmlSignRequest xmlSignRequest) {
+        final DocumentWrapper document = prepareForSigning(xmlSignRequest);
+
+        int i = 0;
+
+        for (KeyStoreWrapper keyStore : kalkanWrapper.read(xmlSignRequest.getSigners())) {
+            val signerRequest = xmlSignRequest.getSigners().get(i++);
+            document.createXmlSignatureExtracted(keyStore.getCertificate(), keyStore.getPrivateKey(), signerRequest.getXpath());
+        }
+
+        return XmlSignResponse.builder()
+            .xml(document.toString())
+            .build();
+    }
+
+    private DocumentWrapper prepareForSigning(XmlSignRequest xmlSignRequest) {
+        final DocumentWrapper document = read(xmlSignRequest.getXml(), xmlSignRequest.isClearSignatures());
+
+        if (xmlSignRequest.isTrimXml()) {
+            removeWhitespace(document.getDocument());
+        }
+
+        return document;
     }
 
     /**
@@ -121,13 +160,58 @@ public class XmlService {
             if (!xmlSignature.check() || !cert.isValid(currentDate, checkOcsp, checkCrl)) {
                 valid = false;
             }
-            root.removeChild(signature);
+            signature.getParentNode().removeChild(signature);
 
             certs.add(cert);
         }
 
         if (signaturesLength < 1) {
             valid = false;
+        }
+
+        return VerificationResponse.builder()
+            .valid(valid)
+            .signers(certs.stream().map(c -> c.toCertificateInfo(currentDate, checkOcsp, checkCrl)).toList())
+            .build();
+    }
+
+    /**
+     * Проверяет XML-подписи, созданные методом {@link #signV2(XmlSignRequest)}. В отличие от
+     * {@link #verify(String, boolean, boolean)}, каждая подпись проверяется не "на месте":
+     * элемент, внутри которого лежит ds:Signature, извлекается в отдельный документ (сериализуется
+     * и парсится заново, как при подписи в v2), и только потом проверяется. Это необходимо, потому
+     * что ds:Reference в v2 использует inclusive canonicalization и чувствителен к
+     * namespace-контексту предков — проверка "на месте" дала бы ложный digest mismatch.
+     *
+     * @param xml XML-строка
+     * @param checkOcsp Проверять в OCSP
+     * @param checkCrl Проверять в CRL
+     * @return Результат проверки
+     */
+    public VerificationResponse verifyV2(String xml, boolean checkOcsp, boolean checkCrl) {
+        final DocumentWrapper document = read(xml, false);
+        final List<XMLSignatureWrapper> signatures = document.signaturesForVerification();
+
+        boolean valid = !signatures.isEmpty();
+
+        final ArrayList<CertificateWrapper> certs = new ArrayList<>();
+        final Date currentDate = certificateService.getCurrentDate();
+
+        for (XMLSignatureWrapper signature : signatures) {
+            final CertificateWrapper cert = signature.getCertificate().orElse(null);
+
+            if (cert == null) {
+                valid = false;
+                continue;
+            }
+
+            certificateService.attachValidationData(cert, checkOcsp, checkCrl);
+
+            if (!signature.check() || !cert.isValid(currentDate, checkOcsp, checkCrl)) {
+                valid = false;
+            }
+
+            certs.add(cert);
         }
 
         return VerificationResponse.builder()

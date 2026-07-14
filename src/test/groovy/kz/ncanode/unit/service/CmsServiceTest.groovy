@@ -43,8 +43,8 @@ class CmsServiceTest extends Specification implements WithTestData {
         def request = new CmsCreateRequest()
         request.setData(Base64.getEncoder().encodeToString(TEST_DATA.getBytes(StandardCharsets.UTF_8)))
         request.setSigners([
-            new SignerRequest(KEY_INDIVIDUAL_VALID_SIGN_2004, KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD, null, null),
-            new SignerRequest(KEY_INDIVIDUAL_VALID_2015, KEY_INDIVIDUAL_VALID_2015_PASSWORD, null, null),
+            SignerRequest.builder().key(KEY_INDIVIDUAL_VALID_SIGN_2004).password(KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD).build(),
+            SignerRequest.builder().key(KEY_INDIVIDUAL_VALID_2015).password(KEY_INDIVIDUAL_VALID_2015_PASSWORD).build(),
         ])
         request.setDetached(detached)
 
@@ -75,7 +75,7 @@ class CmsServiceTest extends Specification implements WithTestData {
         request.setData(Base64.getEncoder().encodeToString(TEST_DATA.getBytes(StandardCharsets.UTF_8)))
         request.setCms(SIGNED_CMS_ONE_SIGNER)
         request.setSigners([
-            new SignerRequest(KEY_INDIVIDUAL_VALID_2015, KEY_INDIVIDUAL_VALID_2015_PASSWORD, null, null),
+            SignerRequest.builder().key(KEY_INDIVIDUAL_VALID_2015).password(KEY_INDIVIDUAL_VALID_2015_PASSWORD).build(),
         ])
         request.setDetached(detached)
 

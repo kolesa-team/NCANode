@@ -6,6 +6,7 @@ import kz.ncanode.dto.crl.CrlResult
 import kz.ncanode.dto.crl.CrlStatus
 import kz.ncanode.dto.ocsp.OcspResult
 import kz.ncanode.dto.ocsp.OcspStatus
+import kz.ncanode.dto.request.SignerRequest
 import kz.ncanode.dto.request.XmlSignRequest
 import kz.ncanode.exception.ServerException
 import kz.ncanode.service.CertificateService
@@ -281,6 +282,106 @@ KR8n3tylbHk=
 
         references.item(0).attributes.getNamedItem("URI").textContent == ('#' + REFERENCE_URI)
         references.item(1).attributes.getNamedItem("URI").textContent == ('#' + REFERENCE_URI)
+    }
+
+    def "check v2 sign extracts, signs and splices the element back"() {
+        given: 'target element without Id and with whitespace text nodes inside'
+        def signer = SignerRequest.builder()
+            .xpath('/a/b')
+            .key(KEY_INDIVIDUAL_VALID_SIGN_2004)
+            .password(KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD)
+            .build()
+        def xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><a><b>\n  <c>test</c>\n</b></a>"
+        def request = XmlSignRequest.builder().xml(xml).signers([signer]).build()
+
+        when: 'sign v2'
+        def signResponse = xmlService.signV2(request)
+
+        then: 'no exception'
+        noExceptionThrown()
+        signResponse != null
+
+        and: 'the signed <b> replaced the original one-for-one, <a> still has a single child'
+        def signed = DOMBuilder.parse(new StringReader(signResponse.xml))
+        signed.documentElement.getChildNodes().getLength() == 1
+        def bElement = signed.documentElement.getElementsByTagName('b').item(0)
+        bElement.getElementsByTagName('ds:Signature').getLength() == 1
+
+        and: 'the target element got an auto-generated Id, referenced by ds:Reference'
+        def generatedId = bElement.attributes.getNamedItem('Id')?.textContent
+        generatedId != null && !generatedId.isEmpty()
+        def reference = bElement.getElementsByTagName('ds:Reference').item(0)
+        reference.attributes.getNamedItem('URI').textContent == ('#' + generatedId)
+
+        and: 'ds:Signature itself has its own Id'
+        def signatureElement = bElement.getElementsByTagName('ds:Signature').item(0)
+        def signatureId = signatureElement.attributes.getNamedItem('Id')?.textContent
+        signatureId != null && !signatureId.isEmpty()
+
+        and: 'the SignedInfo canonicalization is exclusive'
+        def canonicalizationMethod = bElement.getElementsByTagName('ds:CanonicalizationMethod').item(0)
+        canonicalizationMethod.attributes.getNamedItem('Algorithm').textContent == 'http://www.w3.org/2001/10/xml-exc-c14n#'
+
+        and: 'the reference transform is inclusive-with-comments'
+        def c14nTransform = bElement.getElementsByTagName('ds:Transform').item(1)
+        c14nTransform.attributes.getNamedItem('Algorithm').textContent == 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments'
+
+        when: 'verify the produced signature via /xml/v2/verify, which extracts the signed element into a standalone document the same way the signing pipeline does'
+        def validDate = buildValidDate()
+        def issuerCert = mockIssuerCertificate(true)
+        when(certificateService.getCurrentDate()).thenReturn(validDate)
+        when(certificateService.attachValidationData(any(), anyBoolean(), anyBoolean()))
+            .thenAnswer(new CertificateServiceAnswer(issuerCert, OcspResult.ACTIVE, CrlResult.ACTIVE))
+        def verifyResponse = xmlService.verifyV2(signResponse.xml, false, false)
+
+        then: 'signature is valid'
+        verifyResponse.valid
+        verifyResponse.signers.size() == 1
+    }
+
+    def "check v2 verify returns invalid for xml without signatures"() {
+        when: 'verify v2 of a document with no ds:Signature'
+        def verifyResponse = xmlService.verifyV2(XML_VALID_STRING, false, false)
+
+        then: 'not valid and no signers'
+        !verifyResponse.valid
+        verifyResponse.signers.isEmpty()
+    }
+
+    def "check clearSignatures removes all nested signatures without error"() {
+        given: 'two ds:Signature nodes, each nested inside a non-root element (as /xml/v2/sign produces)'
+        def sig = '<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo>x</ds:SignedInfo></ds:Signature>'
+        def xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><a><b>${sig}</b><c>${sig}</c></a>"
+
+        when: 'read with removeSignatures=true'
+        def document = xmlService.read(xml, true)
+
+        then: 'no exception (removeChild used to fail on signatures that are not direct children of the root)'
+        noExceptionThrown()
+
+        and: 'both signatures removed (the old loop over a live NodeList skipped every other one)'
+        document.getDocumentElement().getElementsByTagName('ds:Signature').getLength() == 0
+    }
+
+    def "check v2 sign preserves whitespace inside a pre-existing nested signature"() {
+        given: 'target <b> already holds a ds:Signature whose SignedInfo is formatted with newlines'
+        def preSig = '<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="old">\n<ds:SignedInfo>\n<ds:X>y</ds:X>\n</ds:SignedInfo>\n</ds:Signature>'
+        def xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><a><b>${preSig}</b></a>"
+        def signer = SignerRequest.builder()
+            .xpath('/a/b')
+            .key(KEY_INDIVIDUAL_VALID_SIGN_2004)
+            .password(KEY_INDIVIDUAL_VALID_SIGN_2004_PASSWORD)
+            .build()
+        def request = XmlSignRequest.builder().xml(xml).signers([signer]).build()
+
+        when: 'sign v2 (which strips whitespace from the target before signing)'
+        def signResponse = xmlService.signV2(request)
+
+        then: 'no exception'
+        noExceptionThrown()
+
+        and: 'the pre-existing signature kept its internal newline formatting, so its canonical form is intact'
+        signResponse.xml.contains('<ds:SignedInfo>\n<ds:X>y</ds:X>\n</ds:SignedInfo>')
     }
 
     @Unroll("#caseName")

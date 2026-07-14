@@ -126,7 +126,46 @@ paths:
                 trimXml:
                   $ref: '#/components/schemas/TrimXML'
       responses:
-        200:
+        '200':
+          $ref: '#/components/responses/XMLSignResponse'
+
+  /xml/v2/sign:
+    post:
+      tags:
+        - XML
+      summary: Подписывает XML EDS-подписью
+      description: |
+        У каждого signer'а из signers учитывается только поле xpath — элемент, найденный по
+        нему, вырезается в отдельный документ, подписывается там (self-reference: Id генерируется автоматически,
+        если его нет; ds:Signature вкладывается внутрь элемента и получает свой собственный Id)
+        и вставляется на место оригинала. Алгоритмы канонизации:
+        ds:CanonicalizationMethod у SignedInfo — exclusive (http://www.w3.org/2001/10/xml-exc-c14n#),
+        трансформ у ds:Reference — inclusive-with-comments
+        (http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Запрос на подпись XML
+              required:
+                - xml
+                - signers
+              properties:
+                xml:
+                  type: string
+                  example: '<?xml version=\"1.0\" encoding=\"utf-8\"?><a><b>test</b></a>'
+                  description: XML Строка для подписи
+                signers:
+                  $ref: '#/components/schemas/Signers'
+                clearSignatures:
+                  type: boolean
+                  description: Если true, то удалить прошлы подписи и добавить новые.
+                  example: false
+                trimXml:
+                  $ref: '#/components/schemas/TrimXML'
+      responses:
+        '200':
           $ref: '#/components/responses/XMLSignResponse'
 
   /xml/verify:
@@ -134,6 +173,26 @@ paths:
       tags:
         - XML
       summary: Проверяет все подписи в XML
+      requestBody:
+        $ref: '#/components/requestBodies/XMLVerifyRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/VerificationResponse'
+
+  /xml/v2/verify:
+    post:
+      tags:
+        - XML
+      summary: Проверяет подписи, созданные методом /xml/v2/sign
+      description: |
+        Проверяет XMLDSig-подписи в формате /xml/v2/sign. В отличие от /xml/verify, каждая
+        подпись проверяется не "на месте", а в изоляции: элемент, внутри которого лежит
+        ds:Signature, сериализуется отдельно и парсится заново — тем же способом, что и при
+        подписи. Это обязательно, потому что ds:Reference в v2 использует inclusive
+        canonicalization и чувствителен к namespace-декларациям предков; проверка "на месте"
+        (как в /xml/verify) дала бы ложный отрицательный результат для v2-подписей. xpath
+        передавать не нужно — подписанные элементы определяются автоматически по расположению
+        ds:Signature.
       requestBody:
         $ref: '#/components/requestBodies/XMLVerifyRequest'
       responses:
@@ -454,6 +513,20 @@ components:
           $ref: '#/components/schemas/SignerPassword'
         keyAlias:
           $ref: '#/components/schemas/SignerAlias'
+        referenceUri:
+          type: string
+          description: |
+            Учитывается только методом /xml/sign. URI ссылки на подписываемый элемент
+            (ds:Reference URI), например "#id123". Если не задан, подписывается весь документ.
+        xpath:
+          type: string
+          description: |
+            Учитывается только методом /xml/v2/sign. XPath-выражение, указывающее какой
+            элемент вырезать, подписать и вставить обратно.
+            Namespace-префиксы не поддерживаются — используйте форму через local-name().
+            Если выражение совпадает с несколькими элементами, подписывается первый в порядке
+            документа. Если не задано, подписывается корневой элемент документа целиком.
+          example: "/*[local-name()='Envelope']/*[local-name()='Body']/*[local-name()='data']"
 
     Signers:
       type: array
